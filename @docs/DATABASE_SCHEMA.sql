@@ -144,7 +144,8 @@ CREATE TABLE presence (
     is_active BOOLEAN DEFAULT TRUE,
     color VARCHAR(7),
     connection_id VARCHAR(100),
-    last_heartbeat TIMESTAMP NOT NULL DEFAULT NOW()
+    last_heartbeat TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE(user_id, canvas_id)
 );
 
 -- Indexes for presence

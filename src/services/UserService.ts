@@ -135,20 +135,50 @@ export class UserService {
 
         if (!user) {
             // Create new user
-            const username = supabaseData.email.split('@')[0];
+            let username = supabaseData.email.split('@')[0];
             const avatarColor = this.generateRandomColor();
 
-            user = await this.create({
-                id: supabaseData.uid,
-                username,
-                email: supabaseData.email,
-                displayName: supabaseData.name || username,
-                avatarColor,
-                avatarUrl: supabaseData.picture,
-            });
+            // Try to create user, handle username conflicts
+            let attempts = 0;
+            const maxAttempts = 10;
+
+            while (attempts < maxAttempts) {
+                try {
+                    user = await this.create({
+                        id: supabaseData.uid,
+                        username: attempts === 0 ? username : `${username}_${attempts}`,
+                        email: supabaseData.email,
+                        displayName: supabaseData.name || username,
+                        avatarColor,
+                        avatarUrl: supabaseData.picture,
+                    });
+                    break; // Success, exit loop
+                } catch (error: any) {
+                    // Check if it's a unique constraint violation on username
+                    if (error.code === '23505' && error.message?.includes('username')) {
+                        attempts++;
+                        if (attempts >= maxAttempts) {
+                            // Fallback to using part of the UID as suffix
+                            username = `${username}_${supabaseData.uid.substring(0, 8)}`;
+                            user = await this.create({
+                                id: supabaseData.uid,
+                                username,
+                                email: supabaseData.email,
+                                displayName: supabaseData.name || username,
+                                avatarColor,
+                                avatarUrl: supabaseData.picture,
+                            });
+                            break;
+                        }
+                    } else {
+                        // Some other error, re-throw
+                        throw error;
+                    }
+                }
+            }
         }
 
-        return user;
+        return user!;
     }
 
     /**

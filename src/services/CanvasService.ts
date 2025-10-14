@@ -3,6 +3,40 @@ import { Canvas, CanvasObject, CreateShapeRequest, UpdateShapeRequest } from '..
 
 export class CanvasService {
     /**
+     * Get the single global canvas (or create it if it doesn't exist)
+     */
+    static async getGlobalCanvas(userId: string): Promise<Canvas> {
+        const client = getDatabaseClient();
+
+        // Try to get existing canvas (the first non-deleted one)
+        const { data: existingCanvas, error: fetchError } = await client
+            .from('canvases')
+            .select('*')
+            .eq('is_deleted', false)
+            .limit(1)
+            .single();
+
+        if (existingCanvas) {
+            return existingCanvas as Canvas;
+        }
+
+        // If no canvas exists, create the global canvas
+        const { data: newCanvas, error: createError } = await client
+            .from('canvases')
+            .insert({
+                owner_id: userId,
+                name: 'Global Collaborative Canvas',
+                description: 'A shared canvas for all users to collaborate',
+                is_public: true,
+            })
+            .select()
+            .single();
+
+        if (createError) throw createError;
+        return newCanvas as Canvas;
+    }
+
+    /**
      * Get canvas by ID
      */
     static async findById(canvasId: string): Promise<Canvas | null> {
@@ -16,77 +50,6 @@ export class CanvasService {
 
         if (error || !data) return null;
         return data as Canvas;
-    }
-
-    /**
-     * Get canvases for user
-     */
-    static async findByUserId(userId: string, limit: number = 50): Promise<Canvas[]> {
-        const client = getDatabaseClient();
-
-        // First, get canvases where user is the owner
-        const { data: ownedCanvases, error: ownedError } = await client
-            .from('canvases')
-            .select('*')
-            .eq('owner_id', userId)
-            .eq('is_deleted', false);
-
-        if (ownedError) throw ownedError;
-
-        // Then, get canvases where user is a collaborator
-        const { data: collaboratorCanvases, error: collabError } = await client
-            .from('canvas_collaborators')
-            .select('canvas_id, canvases(*)')
-            .eq('user_id', userId);
-
-        if (collabError) throw collabError;
-
-        // Combine and deduplicate canvases
-        const canvasMap = new Map<string, Canvas>();
-
-        // Add owned canvases
-        (ownedCanvases || []).forEach(canvas => {
-            canvasMap.set(canvas.id, canvas as Canvas);
-        });
-
-        // Add collaborated canvases
-        (collaboratorCanvases || []).forEach((item: any) => {
-            if (item.canvases && !item.canvases.is_deleted) {
-                canvasMap.set(item.canvases.id, item.canvases as Canvas);
-            }
-        });
-
-        // Convert to array, sort by updated_at, and limit
-        const allCanvases = Array.from(canvasMap.values())
-            .sort((a: any, b: any) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-            .slice(0, limit);
-
-        return allCanvases;
-    }
-
-    /**
-     * Create new canvas
-     */
-    static async create(data: {
-        ownerId: string;
-        name: string;
-        description?: string;
-        isPublic?: boolean;
-    }): Promise<Canvas> {
-        const client = getDatabaseClient();
-        const { data: canvas, error } = await client
-            .from('canvases')
-            .insert({
-                owner_id: data.ownerId,
-                name: data.name,
-                description: data.description,
-                is_public: data.isPublic || false,
-            })
-            .select()
-            .single();
-
-        if (error) throw error;
-        return canvas as Canvas;
     }
 
     /**
@@ -134,21 +97,13 @@ export class CanvasService {
     }
 
     /**
-     * Delete canvas (soft delete)
+     * Delete canvas (soft delete) - DISABLED for global canvas
+     * Keeping this for backward compatibility but it won't allow deletion
      */
     static async delete(canvasId: string, userId: string): Promise<boolean> {
-        const client = getDatabaseClient();
-        const { error } = await client
-            .from('canvases')
-            .update({
-                is_deleted: true,
-                updated_at: new Date().toISOString(),
-            })
-            .eq('id', canvasId)
-            .eq('owner_id', userId)
-            .eq('is_deleted', false);
-
-        return !error;
+        // Prevent deletion of the global canvas
+        console.warn('Canvas deletion is disabled - using single global canvas');
+        return false;
     }
 
     /**
@@ -317,30 +272,22 @@ export class CanvasService {
 
     /**
      * Check if user has access to canvas
+     * Since we're using a single global canvas, all authenticated users have access
      */
     static async checkAccess(canvasId: string, userId: string): Promise<boolean> {
         const client = getDatabaseClient();
 
         const { data, error } = await client
             .from('canvases')
-            .select(`
-        id,
-        owner_id,
-        is_public,
-        canvas_collaborators(user_id)
-      `)
+            .select('id, is_public')
             .eq('id', canvasId)
             .eq('is_deleted', false)
             .single();
 
         if (error || !data) return false;
 
-        // User has access if they're the owner, or it's public, or they're a collaborator
-        return (
-            data.owner_id === userId ||
-            data.is_public === true ||
-            (data.canvas_collaborators && data.canvas_collaborators.some((c: any) => c.user_id === userId))
-        );
+        // For global canvas, all users have access if it's public
+        return data.is_public === true;
     }
 
     /**
