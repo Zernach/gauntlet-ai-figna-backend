@@ -1,5 +1,5 @@
 import { WebSocketServer as WSServer, WebSocket } from 'ws';
-import { IncomingMessage } from 'http';
+import { IncomingMessage, Server as HTTPServer } from 'http';
 import { parse } from 'url';
 import { verifySupabaseToken } from '../config/supabase';
 import { WSMessage, WSClient, WSMessageType } from '../types';
@@ -14,13 +14,20 @@ export class WebSocketServer {
     private canvasSubscriptions: Map<string, Set<string>> = new Map();
     private heartbeatInterval: NodeJS.Timeout | null = null;
 
-    constructor(port: number) {
-        this.wss = new WSServer({ port });
+    constructor(server: HTTPServer) {
+        this.wss = new WSServer({
+            server,
+            path: '/ws',
+            verifyClient: (info, callback) => {
+                // Allow all connections (we'll verify auth during the connection handler)
+                callback(true);
+            }
+        });
         this.initialize();
     }
 
     private initialize(): void {
-        console.log(`🔌 WebSocket server listening on port ${this.wss.options.port}`);
+        console.log(`🔌 WebSocket server initialized on path /ws`);
 
         this.wss.on('connection', this.handleConnection.bind(this));
         this.startHeartbeat();

@@ -1,0 +1,9 @@
+Never run deployment commands without explicit user approval.
+This includes: deploy, push, publish, release, netlify deploy, railway up, git push, npm publish, yarn deploy.
+
+Always ask before:
+- Running any deployment or publishing commands
+- Making network requests that modify production systems
+- Running commands with --prod or --production flags
+- Pushing to git repositories
+- Deploying to hosting services

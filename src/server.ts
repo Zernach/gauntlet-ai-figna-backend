@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
+import { createServer, Server as HTTPServer } from 'http';
 import { testDatabaseConnection, closeDatabaseConnection } from './config/database';
 import { initializeSupabase } from './config/supabase';
 import { WebSocketServer } from './websocket/WebSocketServer';
@@ -17,10 +18,10 @@ dotenv.config();
 // Initialize Express app
 const app: Application = express();
 const PORT = parseInt(process.env.PORT || '3001');
-const WS_PORT = parseInt(process.env.WS_PORT || '3002');
 const HOST = process.env.HOST || '0.0.0.0';
 
-// WebSocket server instance
+// HTTP and WebSocket server instances
+let httpServer: HTTPServer;
 let wsServer: WebSocketServer;
 
 // Middleware
@@ -156,24 +157,26 @@ async function startServer(): Promise<void> {
             process.exit(1);
         }
 
+        // Create HTTP server
+        httpServer = createServer(app);
+
         // Start HTTP server
-        app.listen(PORT, HOST, () => {
+        httpServer.listen(PORT, HOST, () => {
             console.log(`\n✅ HTTP Server running on http://${HOST}:${PORT}`);
             console.log(`📡 API Base URL: http://${HOST}:${PORT}/api`);
             console.log(`❤️  Health Check: http://${HOST}:${PORT}/api/health\n`);
         });
 
-        // Start WebSocket server
-        console.log('🔌 Starting WebSocket server...');
-        wsServer = new WebSocketServer(WS_PORT);
-        console.log(`✅ WebSocket Server running on ws://${HOST}:${WS_PORT}\n`);
+        // Attach WebSocket server to HTTP server
+        console.log('🔌 Attaching WebSocket server...');
+        wsServer = new WebSocketServer(httpServer);
+        console.log(`✅ WebSocket Server attached on ws://${HOST}:${PORT}/ws\n`);
 
         console.log('='.repeat(60));
         console.log('🎨 CollabCanvas Backend - Ready for Connections!');
         console.log('='.repeat(60));
         console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-        console.log(`HTTP Port: ${PORT}`);
-        console.log(`WebSocket Port: ${WS_PORT}`);
+        console.log(`HTTP/WS Port: ${PORT}`);
         console.log('='.repeat(60));
         console.log('\n📚 Available Endpoints:');
         console.log('  GET    /api           - API info');
@@ -181,7 +184,7 @@ async function startServer(): Promise<void> {
         console.log('  GET    /api/auth/me   - Get current user');
         console.log('  POST   /api/canvas    - Create canvas');
         console.log('  GET    /api/canvas    - List canvases');
-        console.log('  WS     ws://...       - WebSocket connection');
+        console.log('  WS     ws://host/ws   - WebSocket connection');
         console.log('='.repeat(60) + '\n');
 
     } catch (error: any) {
