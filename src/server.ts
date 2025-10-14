@@ -31,7 +31,7 @@ app.use(helmet({
 }));
 
 // CORS configuration
-const corsOrigins = ['http://localhost:3000', 'http://localhost:8081', 'http://localhost:19006', 'https://figna.archlife.org']; // Development origins
+const corsOrigins = ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:8081', 'http://localhost:19006', 'https://figna.archlife.org']; // Development origins
 
 app.use(cors({
     origin: (origin, callback) => {

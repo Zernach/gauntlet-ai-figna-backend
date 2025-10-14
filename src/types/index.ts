@@ -210,6 +210,9 @@ export interface CreateShapeRequest {
     opacity?: number;
     textContent?: string;
     fontSize?: number;
+    fontFamily?: string;
+    fontWeight?: string;
+    textAlign?: string;
     zIndex?: number;
 }
 
@@ -226,6 +229,9 @@ export interface UpdateShapeRequest {
     opacity?: number;
     textContent?: string;
     fontSize?: number;
+    fontFamily?: string;
+    fontWeight?: string;
+    textAlign?: string;
     zIndex?: number;
     lockedAt?: Date | null;
     lockedBy?: string | null;
