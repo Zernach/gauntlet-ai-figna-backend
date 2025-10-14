@@ -307,7 +307,7 @@ export class CanvasService {
     static isLockExpired(lockedAt?: Date): boolean {
         if (!lockedAt) return true;
         const lockDuration = Date.now() - new Date(lockedAt).getTime();
-        return lockDuration > 10000; // 10 seconds
+        return lockDuration > 5000; // 10 seconds
     }
 
     /**
@@ -318,7 +318,7 @@ export class CanvasService {
         const client = getDatabaseClient();
 
         // Calculate the timestamp for 10 seconds ago
-        const tenSecondsAgo = new Date(Date.now() - 10000).toISOString();
+        const tenSecondsAgo = new Date(Date.now() - 5000).toISOString();
 
         const { data, error } = await client
             .from('canvas_objects')
@@ -348,7 +348,7 @@ export class CanvasService {
     static async getExpiredLocks(canvasId: string): Promise<CanvasObject[]> {
         const client = getDatabaseClient();
 
-        const tenSecondsAgo = new Date(Date.now() - 10000).toISOString();
+        const tenSecondsAgo = new Date(Date.now() - 5000).toISOString();
 
         const { data, error } = await client
             .from('canvas_objects')
