@@ -271,7 +271,34 @@ export class WebSocketServer {
     private async handleShapeUpdate(client: WSClient, message: WSMessage): Promise<void> {
         const { shapeId, updates } = message.payload;
 
-        // If isLocked is being set to true, convert it to locked_at and locked_by
+        // Enforce exclusive locking: fetch current shape and prevent updates when locked by another user (and not expired)
+        const currentShape = await CanvasService.getShapeById(shapeId);
+        if (currentShape) {
+            const lockedBy = (currentShape as any).locked_by as string | null;
+            const lockedAt = (currentShape as any).locked_at as Date | null;
+
+            const isLockedByOther = !!lockedBy && lockedBy !== client.userId;
+            const isExpired = CanvasService.isLockExpired(lockedAt as any);
+
+            if (isLockedByOther && !isExpired) {
+                // Only owner can unlock; deny lock attempts and other updates from others while lock is active
+                if (updates.isLocked !== undefined || Object.keys(updates).length > 0) {
+                    this.sendToClient(client.id, {
+                        type: 'ERROR',
+                        payload: { message: 'Shape is locked by another user' },
+                    } as any);
+                    // Send back the authoritative shape state to the requester
+                    this.sendToClient(client.id, {
+                        type: 'SHAPE_UPDATE',
+                        payload: { shape: currentShape },
+                        userId: client.userId,
+                    } as any);
+                    return;
+                }
+            }
+        }
+
+        // If isLocked is being set to true/false, convert it to locked_at and locked_by
         const updatedData: any = { ...updates };
         if (updates.isLocked === true) {
             updatedData.lockedAt = new Date();
@@ -279,6 +306,24 @@ export class WebSocketServer {
             delete updatedData.isLocked;
             console.log(`🔒 Locking shape ${shapeId} for user ${client.userId}`);
         } else if (updates.isLocked === false) {
+            // Only allow unlock by the lock owner; if not owner, ignore
+            if (currentShape) {
+                const lockedBy = (currentShape as any).locked_by as string | null;
+                const lockedAt = (currentShape as any).locked_at as Date | null;
+                const isExpired = CanvasService.isLockExpired(lockedAt as any);
+                if (lockedBy && lockedBy !== client.userId && !isExpired) {
+                    this.sendToClient(client.id, {
+                        type: 'ERROR',
+                        payload: { message: 'Only the lock owner can unlock this shape' },
+                    } as any);
+                    this.sendToClient(client.id, {
+                        type: 'SHAPE_UPDATE',
+                        payload: { shape: currentShape },
+                        userId: client.userId,
+                    } as any);
+                    return;
+                }
+            }
             updatedData.lockedAt = null;
             updatedData.lockedBy = null;
             delete updatedData.isLocked;
