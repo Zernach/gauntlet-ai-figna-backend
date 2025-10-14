@@ -23,19 +23,45 @@ export class CanvasService {
      */
     static async findByUserId(userId: string, limit: number = 50): Promise<Canvas[]> {
         const client = getDatabaseClient();
-        const { data, error } = await client
-            .from('canvases')
-            .select(`
-        *,
-        canvas_collaborators!inner(user_id)
-      `)
-            .or(`owner_id.eq.${userId},canvas_collaborators.user_id.eq.${userId}`)
-            .eq('is_deleted', false)
-            .order('updated_at', { ascending: false })
-            .limit(limit);
 
-        if (error) throw error;
-        return (data || []) as Canvas[];
+        // First, get canvases where user is the owner
+        const { data: ownedCanvases, error: ownedError } = await client
+            .from('canvases')
+            .select('*')
+            .eq('owner_id', userId)
+            .eq('is_deleted', false);
+
+        if (ownedError) throw ownedError;
+
+        // Then, get canvases where user is a collaborator
+        const { data: collaboratorCanvases, error: collabError } = await client
+            .from('canvas_collaborators')
+            .select('canvas_id, canvases(*)')
+            .eq('user_id', userId);
+
+        if (collabError) throw collabError;
+
+        // Combine and deduplicate canvases
+        const canvasMap = new Map<string, Canvas>();
+
+        // Add owned canvases
+        (ownedCanvases || []).forEach(canvas => {
+            canvasMap.set(canvas.id, canvas as Canvas);
+        });
+
+        // Add collaborated canvases
+        (collaboratorCanvases || []).forEach((item: any) => {
+            if (item.canvases && !item.canvases.is_deleted) {
+                canvasMap.set(item.canvases.id, item.canvases as Canvas);
+            }
+        });
+
+        // Convert to array, sort by updated_at, and limit
+        const allCanvases = Array.from(canvasMap.values())
+            .sort((a: any, b: any) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+            .slice(0, limit);
+
+        return allCanvases;
     }
 
     /**

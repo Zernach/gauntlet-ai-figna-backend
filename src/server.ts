@@ -29,12 +29,19 @@ app.use(helmet({
     crossOriginEmbedderPolicy: false,
 }));
 
+// CORS configuration
+const corsOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',')
+    : true; // In development, allow all origins
+
 app.use(cors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
+    origin: corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+
+console.log('🔒 CORS configuration:', corsOrigins === true ? 'All origins allowed (development)' : `Specific origins: ${corsOrigins}`);
 
 app.use(compression() as any);
 app.use(express.json({ limit: '10mb' }));
