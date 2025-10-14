@@ -55,7 +55,7 @@ Real-time collaborative design canvas backend with WebSocket support, Supabase A
    HOST=0.0.0.0
    
    # CORS Configuration
-   ALLOWED_ORIGINS=http://localhost:8081,http://localhost:19006
+   ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8081,http://localhost:19006
    
    # Supabase Configuration
    SUPABASE_URL=https://your-project.supabase.co

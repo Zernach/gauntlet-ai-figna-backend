@@ -30,18 +30,37 @@ app.use(helmet({
 }));
 
 // CORS configuration
-const corsOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',')
-    : true; // In development, allow all origins
+const corsOrigins = ['http://localhost:3000', 'http://localhost:8081', 'http://localhost:19006', 'https://figna.archlife.org']; // Development origins
 
 app.use(cors({
-    origin: corsOrigins,
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps, Postman, or server-to-server)
+        if (!origin) {
+            return callback(null, true);
+        }
+
+        // If corsOrigins is an array, check if the origin is allowed
+        if (Array.isArray(corsOrigins)) {
+            if (corsOrigins.includes(origin)) {
+                callback(null, true);
+            } else {
+                console.warn(`⚠️  CORS blocked request from origin: ${origin}`);
+                callback(new Error(`Origin ${origin} not allowed by CORS`));
+            }
+        } else {
+            // Allow all origins if corsOrigins is true
+            callback(null, true);
+        }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['Content-Type', 'Authorization'],
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
 }));
 
-console.log('🔒 CORS configuration:', corsOrigins === true ? 'All origins allowed (development)' : `Specific origins: ${corsOrigins}`);
+console.log('🔒 CORS configuration:', Array.isArray(corsOrigins) ? `Allowed origins: ${corsOrigins.join(', ')}` : 'All origins allowed');
 
 app.use(compression() as any);
 app.use(express.json({ limit: '10mb' }));
