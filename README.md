@@ -1,4 +1,5 @@
-# CollabCanvas Backend - Phase 1 MVP
+# Figna Backend - Phase 1 MVP
+## Realtime Collaborative Design Canvas
 
 Real-time collaborative design canvas backend with WebSocket support, Supabase Authentication, and Supabase PostgreSQL database.
 

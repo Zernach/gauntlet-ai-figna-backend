@@ -13,6 +13,7 @@ export class WebSocketServer {
     private clients: Map<string, WSClient> = new Map();
     private canvasSubscriptions: Map<string, Set<string>> = new Map();
     private heartbeatInterval: NodeJS.Timeout | null = null;
+    private autoUnlockInterval: NodeJS.Timeout | null = null;
 
     constructor(server: HTTPServer) {
         this.wss = new WSServer({
@@ -31,6 +32,7 @@ export class WebSocketServer {
 
         this.wss.on('connection', this.handleConnection.bind(this));
         this.startHeartbeat();
+        this.startAutoUnlock();
     }
 
     private async handleConnection(ws: WebSocket, req: IncomingMessage): Promise<void> {
@@ -101,7 +103,7 @@ export class WebSocketServer {
                     user = await UserService.create({
                         id: authenticatedUserId,
                         username: `demo_user_${shortId}_${timestamp}`,
-                        email: `demo_${shortId}@collabcanvas.com`,
+                        email: `demo_${shortId}@figna.com`,
                         displayName: 'Demo User',
                         avatarColor: '#3B82F6',
                     });
@@ -125,7 +127,25 @@ export class WebSocketServer {
             // Update user online status
             await UserService.updateOnlineStatus(authenticatedUserId, true);
 
-            // Send initial canvas state
+            // Create initial presence record immediately
+            const userColor = user.avatarColor || this.assignNeonColor(authenticatedUserId);
+
+            // Update user's avatar color if not set
+            if (!user.avatarColor) {
+                await UserService.update(authenticatedUserId, { avatarColor: userColor });
+                user.avatarColor = userColor;
+            }
+
+            await PresenceService.upsert({
+                userId: authenticatedUserId,
+                canvasId: canvasId,
+                cursorX: 0,
+                cursorY: 0,
+                color: userColor,
+                connectionId: connectionId,
+            });
+
+            // Send initial canvas state (now includes this user's presence)
             await this.sendCanvasSync(client);
 
             // Notify other users
@@ -202,6 +222,9 @@ export class WebSocketServer {
     private async handleCursorMove(client: WSClient, message: WSMessage): Promise<void> {
         const { x, y, viewportX, viewportY, viewportZoom } = message.payload || {};
 
+        // Ensure user has a color assigned
+        const userColor = client.user?.avatarColor || this.assignNeonColor(client.userId);
+
         // Update presence in database
         await PresenceService.upsert({
             userId: client.userId,
@@ -211,7 +234,7 @@ export class WebSocketServer {
             viewportX,
             viewportY,
             viewportZoom,
-            color: client.user?.avatarColor || '#3B82F6',
+            color: userColor,
             connectionId: client.id,
         });
 
@@ -222,7 +245,8 @@ export class WebSocketServer {
                 userId: client.userId,
                 username: client.user?.username,
                 displayName: client.user?.displayName,
-                color: client.user?.avatarColor,
+                email: client.user?.email,
+                color: userColor,
                 x,
                 y,
             },
@@ -247,11 +271,33 @@ export class WebSocketServer {
     private async handleShapeUpdate(client: WSClient, message: WSMessage): Promise<void> {
         const { shapeId, updates } = message.payload;
 
+        // If isLocked is being set to true, convert it to locked_at and locked_by
+        const updatedData: any = { ...updates };
+        if (updates.isLocked === true) {
+            updatedData.lockedAt = new Date();
+            updatedData.lockedBy = client.userId;
+            delete updatedData.isLocked;
+            console.log(`🔒 Locking shape ${shapeId} for user ${client.userId}`);
+        } else if (updates.isLocked === false) {
+            updatedData.lockedAt = null;
+            updatedData.lockedBy = null;
+            delete updatedData.isLocked;
+            console.log(`🔓 Unlocking shape ${shapeId}`);
+        }
+
         const shape = await CanvasService.updateShape(
             shapeId,
             client.userId,
-            updates
+            updatedData
         );
+
+        // Debug: Log the shape data being broadcast (Supabase returns snake_case)
+        console.log(`📤 Broadcasting SHAPE_UPDATE:`, {
+            id: (shape as any).id,
+            locked_at: (shape as any).locked_at,
+            locked_by: (shape as any).locked_by,
+            all_keys: Object.keys(shape),
+        });
 
         // Broadcast to all users including sender
         this.broadcastToCanvas(client.canvasId, {
@@ -290,13 +336,16 @@ export class WebSocketServer {
     private async handlePresenceUpdate(client: WSClient, message: WSMessage): Promise<void> {
         const { selectedObjectIds, isActive } = message.payload;
 
+        // Ensure user has a color assigned
+        const userColor = client.user?.avatarColor || this.assignNeonColor(client.userId);
+
         await PresenceService.upsert({
             userId: client.userId,
             canvasId: client.canvasId,
             cursorX: 0,
             cursorY: 0,
             selectedObjectIds,
-            color: client.user?.avatarColor || '#3B82F6',
+            color: userColor,
             connectionId: client.id,
         });
 
@@ -306,6 +355,7 @@ export class WebSocketServer {
             payload: {
                 userId: client.userId,
                 username: client.user?.username,
+                email: client.user?.email,
                 selectedObjectIds,
                 isActive,
             },
@@ -324,15 +374,20 @@ export class WebSocketServer {
                 payload: {
                     canvas,
                     shapes,
-                    activeUsers: activeUsers.map(p => ({
-                        userId: p.userId,
-                        username: (p as any).username,
-                        displayName: (p as any).display_name,
-                        color: p.color,
-                        cursorX: p.cursorX,
-                        cursorY: p.cursorY,
-                        isActive: p.isActive,
-                    })),
+                    activeUsers: activeUsers.map(p => {
+                        // Supabase join returns nested user data
+                        const userData = (p as any).users;
+                        return {
+                            userId: p.userId,
+                            username: userData?.username || 'Unknown',
+                            displayName: userData?.display_name || userData?.username || 'Unknown',
+                            email: userData?.email || 'unknown@example.com',
+                            color: p.color || this.assignNeonColor(p.userId),
+                            cursorX: p.cursorX,
+                            cursorY: p.cursorY,
+                            isActive: p.isActive,
+                        };
+                    }),
                 },
             });
         } catch (error: any) {
@@ -342,13 +397,17 @@ export class WebSocketServer {
     }
 
     private async broadcastUserJoin(client: WSClient): Promise<void> {
+        // Ensure user has a color assigned
+        const userColor = client.user?.avatarColor || this.assignNeonColor(client.userId);
+
         this.broadcastToCanvas(client.canvasId, {
             type: 'USER_JOIN',
             payload: {
                 userId: client.userId,
                 username: client.user?.username,
                 displayName: client.user?.displayName,
-                color: client.user?.avatarColor,
+                email: client.user?.email,
+                color: userColor,
             },
         }, client.id);
     }
@@ -368,6 +427,24 @@ export class WebSocketServer {
         );
         if (!hasOtherConnections) {
             await UserService.updateOnlineStatus(client.userId, false);
+
+            // Unlock all shapes locked by this user
+            const unlockedShapes = await CanvasService.unlockShapesByUser(client.userId, client.canvasId);
+            console.log(`🔓 Auto-unlocked ${unlockedShapes.length} shape(s) on user disconnect`);
+
+            // Broadcast unlock notifications for each shape
+            for (const shape of unlockedShapes) {
+                this.broadcastToCanvas(client.canvasId, {
+                    type: 'SHAPE_UPDATE',
+                    payload: {
+                        shape: {
+                            ...shape,
+                            locked_at: null,
+                            locked_by: null,
+                        }
+                    },
+                });
+            }
         }
 
         // Notify other users
@@ -471,9 +548,54 @@ export class WebSocketServer {
         }, interval);
     }
 
+    private startAutoUnlock(): void {
+        // Check for expired locks every 2 seconds
+        this.autoUnlockInterval = setInterval(async () => {
+            // Get all active canvases
+            const activeCanvases = new Set<string>();
+            this.clients.forEach(client => {
+                activeCanvases.add(client.canvasId);
+            });
+
+            // Check and unlock expired shapes for each canvas
+            for (const canvasId of activeCanvases) {
+                try {
+                    const expiredShapes = await CanvasService.getExpiredLocks(canvasId);
+
+                    if (expiredShapes.length > 0) {
+                        // Auto-unlock the shapes
+                        await CanvasService.autoUnlockExpiredShapes(canvasId);
+
+                        // Broadcast unlock notifications for each shape
+                        for (const shape of expiredShapes) {
+                            this.broadcastToCanvas(canvasId, {
+                                type: 'SHAPE_UPDATE',
+                                payload: {
+                                    shape: {
+                                        ...shape,
+                                        locked_at: null,
+                                        locked_by: null,
+                                    }
+                                },
+                            });
+                        }
+
+                        console.log(`🔓 Auto-unlocked ${expiredShapes.length} shape(s) in canvas ${canvasId}`);
+                    }
+                } catch (error) {
+                    console.error(`Error checking expired locks for canvas ${canvasId}:`, error);
+                }
+            }
+        }, 2000); // Check every 2 seconds
+    }
+
     public close(): void {
         if (this.heartbeatInterval) {
             clearInterval(this.heartbeatInterval);
+        }
+
+        if (this.autoUnlockInterval) {
+            clearInterval(this.autoUnlockInterval);
         }
 
         this.clients.forEach((client) => {
@@ -501,6 +623,19 @@ export class WebSocketServer {
             activeCanvases: this.canvasSubscriptions.size,
             connectionsByCanvas,
         };
+    }
+
+    /**
+     * Assign a neon color to a user based on their userId
+     */
+    private assignNeonColor(userId: string): string {
+        const NEON_COLORS = [
+            '#72fa41', '#24ccff', '#fbff00', '#ff69b4', '#00ffff',
+            '#ff00ff', '#00ff00', '#ff0080', '#80ff00', '#ff8000',
+            '#0080ff', '#ff0040', '#40ff00', '#00ff80', '#8000ff'
+        ];
+        const colorIndex = parseInt(userId.slice(0, 8), 16) % NEON_COLORS.length;
+        return NEON_COLORS[colorIndex];
     }
 }
 

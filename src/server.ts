@@ -139,7 +139,7 @@ process.on('uncaughtException', (error) => {
 // Start server
 async function startServer(): Promise<void> {
     try {
-        console.log('🚀 Starting CollabCanvas Backend Server...\n');
+        console.log('🚀 Starting Figna Backend Server...\n');
 
         // Initialize Supabase
         console.log('🔥 Initializing Supabase...');
@@ -173,7 +173,7 @@ async function startServer(): Promise<void> {
         console.log(`✅ WebSocket Server attached on ws://${HOST}:${PORT}/ws\n`);
 
         console.log('='.repeat(60));
-        console.log('🎨 CollabCanvas Backend - Ready for Connections!');
+        console.log('🎨 Figna Backend - Ready for Connections!');
         console.log('='.repeat(60));
         console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
         console.log(`HTTP/WS Port: ${PORT}`);

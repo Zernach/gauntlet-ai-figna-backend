@@ -1,5 +1,6 @@
 -- WIPE_DB.sql
--- Complete database cleanup script for CollabCanvas
+-- Complete database cleanup script for Figna
+-- Realtime Collaborative Design Canvas
 -- PostgreSQL 14+
 -- Database: gauntletaidb
 -- 
@@ -262,7 +263,7 @@ BEGIN
     BEGIN
         -- Drop application user if it exists
         -- Uncomment the following line if you want to remove the application user
-        -- DROP USER IF EXISTS collabcanvas_app;
+        -- DROP USER IF EXISTS figna_app;
         RAISE NOTICE 'Application users preserved (commented out for safety)';
     EXCEPTION
         WHEN OTHERS THEN

@@ -182,19 +182,14 @@ export class UserService {
     }
 
     /**
-     * Generate random avatar color
+     * Generate random avatar color from neon palette
      */
     private static generateRandomColor(): string {
-        const colors = [
-            '#3B82F6', // Blue
-            '#10B981', // Green
-            '#F59E0B', // Orange
-            '#EF4444', // Red
-            '#8B5CF6', // Purple
-            '#EC4899', // Pink
-            '#14B8A6', // Teal
-            '#F97316', // Orange-red
+        const NEON_COLORS = [
+            '#72fa41', '#24ccff', '#fbff00', '#ff69b4', '#00ffff',
+            '#ff00ff', '#00ff00', '#ff0080', '#80ff00', '#ff8000',
+            '#0080ff', '#ff0040', '#40ff00', '#00ff80', '#8000ff'
         ];
-        return colors[Math.floor(Math.random() * colors.length)];
+        return NEON_COLORS[Math.floor(Math.random() * NEON_COLORS.length)];
     }
 }

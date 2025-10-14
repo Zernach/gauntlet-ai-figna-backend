@@ -16,7 +16,7 @@ router.get('/health', (req, res) => {
 // API version
 router.get('/', (req, res) => {
     res.json({
-        name: 'CollabCanvas API',
+        name: 'Figna API',
         version: '1.0.0',
         description: 'Real-time collaborative design canvas backend',
         endpoints: {

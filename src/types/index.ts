@@ -1,4 +1,4 @@
-// Core type definitions for CollabCanvas Backend
+// Core type definitions for Figna Backend
 
 export interface User {
     id: string;
@@ -65,7 +65,8 @@ export interface CanvasObject {
     fontWeight: string;
     textAlign: string;
     zIndex: number;
-    isLocked: boolean;
+    lockedAt?: Date;
+    lockedBy?: string;
     isVisible: boolean;
     groupId?: string;
     metadata: Record<string, any>;
@@ -226,7 +227,8 @@ export interface UpdateShapeRequest {
     textContent?: string;
     fontSize?: number;
     zIndex?: number;
-    isLocked?: boolean;
+    lockedAt?: Date | null;
+    lockedBy?: string | null;
     isVisible?: boolean;
 }
 

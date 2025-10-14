@@ -1,4 +1,5 @@
--- CollabCanvas Database Schema
+-- Figna Database Schema
+-- Realtime Collaborative Design Canvas
 -- PostgreSQL 14+
 -- Database: gauntletaidb
 
@@ -113,7 +114,8 @@ CREATE TABLE canvas_objects (
     font_weight VARCHAR(20) DEFAULT 'normal',
     text_align VARCHAR(20) DEFAULT 'left',
     z_index INTEGER NOT NULL,
-    is_locked BOOLEAN DEFAULT FALSE,
+    locked_at TIMESTAMP,
+    locked_by UUID REFERENCES users(id),
     is_visible BOOLEAN DEFAULT TRUE,
     group_id UUID,
     metadata JSONB DEFAULT '{}'::jsonb,
@@ -129,6 +131,11 @@ CREATE INDEX idx_canvas_objects_canvas_id ON canvas_objects(canvas_id) WHERE is_
 CREATE INDEX idx_canvas_objects_z_index ON canvas_objects(canvas_id, z_index) WHERE is_deleted = FALSE;
 CREATE INDEX idx_canvas_objects_created_by ON canvas_objects(created_by);
 CREATE INDEX idx_canvas_objects_group_id ON canvas_objects(group_id) WHERE group_id IS NOT NULL AND is_deleted = FALSE;
+CREATE INDEX idx_canvas_objects_locked_at ON canvas_objects(locked_at) WHERE locked_at IS NOT NULL AND is_deleted = FALSE;
+
+-- Note: Shapes are automatically unlocked after 10 seconds of inactivity
+-- The locked_at timestamp is used to track when a shape was last locked
+-- If (NOW() - locked_at) > 10 seconds, the shape is considered unlocked
 
 -- Presence Table (Ephemeral - TTL 30s)
 CREATE TABLE presence (
@@ -392,7 +399,7 @@ INSERT INTO users (id, username, email, display_name, avatar_color)
 VALUES (
     '00000000-0000-0000-0000-000000000001',
     'demo_user',
-    'demo@collabcanvas.com',
+    'demo@figna.com',
     'Demo User',
     '#3B82F6'
 ) ON CONFLICT (email) DO NOTHING;
@@ -412,13 +419,13 @@ VALUES (
 -- ==========================================
 
 -- Create application user
--- CREATE USER collabcanvas_app WITH PASSWORD 'your_secure_password';
+-- CREATE USER figna_app WITH PASSWORD 'your_secure_password';
 
 -- Grant permissions
--- GRANT CONNECT ON DATABASE gauntletaidb TO collabcanvas_app;
--- GRANT USAGE ON SCHEMA public TO collabcanvas_app;
--- GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO collabcanvas_app;
--- GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO collabcanvas_app;
+-- GRANT CONNECT ON DATABASE gauntletaidb TO figna_app;
+-- GRANT USAGE ON SCHEMA public TO figna_app;
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO figna_app;
+-- GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO figna_app;
 
 -- ==========================================
 -- COMMENTS

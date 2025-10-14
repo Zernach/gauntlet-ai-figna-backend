@@ -74,7 +74,7 @@ export class PresenceService {
             .from('presence')
             .select(`
         *,
-        users!inner(username, display_name, avatar_color)
+        users!inner(username, display_name, email, avatar_color)
       `)
             .eq('canvas_id', canvasId)
             .eq('is_active', true)

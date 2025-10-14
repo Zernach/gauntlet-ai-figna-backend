@@ -201,8 +201,8 @@ export class CanvasService {
             x: 'x', y: 'y', width: 'width', height: 'height', radius: 'radius',
             rotation: 'rotation', color: 'color', strokeColor: 'stroke_color',
             strokeWidth: 'stroke_width', opacity: 'opacity', textContent: 'text_content',
-            fontSize: 'font_size', zIndex: 'z_index', isLocked: 'is_locked',
-            isVisible: 'is_visible'
+            fontSize: 'font_size', zIndex: 'z_index', lockedAt: 'locked_at',
+            lockedBy: 'locked_by', isVisible: 'is_visible'
         };
 
         for (const [key, dbField] of Object.entries(fieldMap)) {
@@ -299,5 +299,94 @@ export class CanvasService {
             .from('canvases')
             .update({ last_accessed_at: new Date().toISOString() })
             .eq('id', canvasId);
+    }
+
+    /**
+     * Check if a shape's lock has expired (>10 seconds old)
+     */
+    static isLockExpired(lockedAt?: Date): boolean {
+        if (!lockedAt) return true;
+        const lockDuration = Date.now() - new Date(lockedAt).getTime();
+        return lockDuration > 10000; // 10 seconds
+    }
+
+    /**
+     * Auto-unlock shapes that have been locked for more than 10 seconds
+     * Returns the count of shapes unlocked
+     */
+    static async autoUnlockExpiredShapes(canvasId: string): Promise<number> {
+        const client = getDatabaseClient();
+
+        // Calculate the timestamp for 10 seconds ago
+        const tenSecondsAgo = new Date(Date.now() - 10000).toISOString();
+
+        const { data, error } = await client
+            .from('canvas_objects')
+            .update({
+                locked_at: null,
+                locked_by: null,
+                updated_at: new Date().toISOString(),
+            })
+            .eq('canvas_id', canvasId)
+            .not('locked_at', 'is', null)
+            .lt('locked_at', tenSecondsAgo)
+            .eq('is_deleted', false)
+            .select();
+
+        if (error) {
+            console.error('Error auto-unlocking shapes:', error);
+            return 0;
+        }
+
+        return data?.length || 0;
+    }
+
+    /**
+     * Get all expired locks for a canvas
+     * Used to notify clients about auto-unlocked shapes
+     */
+    static async getExpiredLocks(canvasId: string): Promise<CanvasObject[]> {
+        const client = getDatabaseClient();
+
+        const tenSecondsAgo = new Date(Date.now() - 10000).toISOString();
+
+        const { data, error } = await client
+            .from('canvas_objects')
+            .select('*')
+            .eq('canvas_id', canvasId)
+            .not('locked_at', 'is', null)
+            .lt('locked_at', tenSecondsAgo)
+            .eq('is_deleted', false);
+
+        if (error) return [];
+        return (data || []) as CanvasObject[];
+    }
+
+    /**
+     * Unlock all shapes locked by a specific user
+     * Used when a user disconnects
+     */
+    static async unlockShapesByUser(userId: string, canvasId: string): Promise<CanvasObject[]> {
+        const client = getDatabaseClient();
+
+        const { data, error } = await client
+            .from('canvas_objects')
+            .update({
+                locked_at: null,
+                locked_by: null,
+                updated_at: new Date().toISOString(),
+            })
+            .eq('canvas_id', canvasId)
+            .eq('locked_by', userId)
+            .not('locked_at', 'is', null)
+            .eq('is_deleted', false)
+            .select();
+
+        if (error) {
+            console.error('Error unlocking shapes by user:', error);
+            return [];
+        }
+
+        return (data || []) as CanvasObject[];
     }
 }

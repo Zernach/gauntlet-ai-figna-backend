@@ -1,7 +1,7 @@
 {
-  "name": "gauntlet-ai-backend",
+  "name": "figna-backend",
   "version": "1.0.0",
-  "description": "CollabCanvas Real-time Collaborative Design Canvas - Backend API",
+  "description": "Figna - Realtime Collaborative Design Canvas - Backend API",
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon src/server.ts",
