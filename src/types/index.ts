@@ -147,6 +147,8 @@ export type WSMessageType =
     | 'USER_JOIN'
     | 'USER_LEAVE'
     | 'PRESENCE_UPDATE'
+    | 'ACTIVE_USERS'
+    | 'CANVAS_UPDATE'
     | 'CANVAS_SYNC'
     | 'CANVAS_SYNC_REQUEST'
     | 'PING'

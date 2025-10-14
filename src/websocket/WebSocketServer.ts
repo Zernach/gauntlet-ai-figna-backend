@@ -151,6 +151,9 @@ export class WebSocketServer {
             // Notify other users
             await this.broadcastUserJoin(client);
 
+            // Broadcast full active users list to everyone on this canvas
+            await this.broadcastActiveUsers(client.canvasId);
+
             // Set up message handler
             ws.on('message', (data: Buffer) => this.handleMessage(connectionId, data));
             ws.on('close', () => this.handleDisconnect(connectionId));
@@ -208,6 +211,10 @@ export class WebSocketServer {
 
                 case 'PRESENCE_UPDATE':
                     await this.handlePresenceUpdate(client, message);
+                    break;
+
+                case 'CANVAS_UPDATE':
+                    await this.handleCanvasUpdate(client, message);
                     break;
 
                 default:
@@ -407,6 +414,53 @@ export class WebSocketServer {
         }, client.id);
     }
 
+    private async broadcastActiveUsers(canvasId: string): Promise<void> {
+        try {
+            const activeUsers = await PresenceService.getActiveUsers(canvasId);
+            const payload = activeUsers.map(p => {
+                const userData = (p as any).users;
+                return {
+                    userId: (p as any).user_id || (p as any).userId,
+                    username: userData?.username || 'Unknown',
+                    displayName: userData?.display_name || userData?.username || 'Unknown',
+                    email: userData?.email || 'unknown@example.com',
+                    color: (p as any).color || this.assignNeonColor((p as any).user_id || (p as any).userId),
+                };
+            });
+
+            this.broadcastToCanvas(canvasId, {
+                type: 'ACTIVE_USERS',
+                payload: { activeUsers: payload },
+            });
+        } catch (error) {
+            console.error('Failed to broadcast active users:', error);
+        }
+    }
+
+    private async handleCanvasUpdate(client: WSClient, message: WSMessage): Promise<void> {
+        const { updates } = message.payload || {};
+
+        const allowedUpdates: any = {};
+        if (updates && typeof updates === 'object') {
+            if (updates.backgroundColor !== undefined) {
+                allowedUpdates.backgroundColor = updates.backgroundColor;
+            }
+        }
+
+        if (Object.keys(allowedUpdates).length === 0) {
+            return;
+        }
+
+        const canvas = await CanvasService.update(client.canvasId, allowedUpdates);
+
+        // Broadcast the updated canvas to all users (including sender)
+        this.broadcastToCanvas(client.canvasId, {
+            type: 'CANVAS_UPDATE',
+            payload: { canvas },
+            userId: client.userId,
+        });
+    }
+
     private async sendCanvasSync(client: WSClient): Promise<void> {
         try {
             // Get canvas data
@@ -501,6 +555,9 @@ export class WebSocketServer {
             },
         });
 
+        // Broadcast updated active users list
+        await this.broadcastActiveUsers(client.canvasId);
+
         // Cleanup
         this.unsubscribeFromCanvas(connectionId, client.canvasId);
         this.clients.delete(connectionId);
@@ -575,7 +632,7 @@ export class WebSocketServer {
     private startHeartbeat(): void {
         const interval = parseInt(process.env.WS_HEARTBEAT_INTERVAL || '30000');
 
-        this.heartbeatInterval = setInterval(() => {
+        this.heartbeatInterval = setInterval(async () => {
             this.clients.forEach((client, connectionId) => {
                 if (!client.isAlive) {
                     console.log(`💔 Terminating inactive connection: ${connectionId}`);
@@ -588,8 +645,19 @@ export class WebSocketServer {
                 client.socket.ping();
             });
 
-            // Cleanup stale presence records
-            PresenceService.cleanupStale().catch(console.error);
+            // Cleanup stale presence records and broadcast updates if anything changed
+            try {
+                const removed = await PresenceService.cleanupStale();
+                if (removed && removed > 0) {
+                    const activeCanvases = new Set<string>();
+                    this.clients.forEach(c => activeCanvases.add(c.canvasId));
+                    for (const canvasId of activeCanvases) {
+                        await this.broadcastActiveUsers(canvasId);
+                    }
+                }
+            } catch (e) {
+                console.error(e);
+            }
         }, interval);
     }
 
