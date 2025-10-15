@@ -59,6 +59,8 @@ export interface CanvasObject {
     strokeColor?: string;
     strokeWidth: number;
     opacity: number;
+    shadowColor?: string;
+    shadowStrength?: number;
     textContent?: string;
     fontSize?: number;
     fontFamily: string;
@@ -210,6 +212,8 @@ export interface CreateShapeRequest {
     strokeColor?: string;
     strokeWidth?: number;
     opacity?: number;
+    shadowColor?: string;
+    shadowStrength?: number;
     textContent?: string;
     fontSize?: number;
     fontFamily?: string;
@@ -229,6 +233,8 @@ export interface UpdateShapeRequest {
     strokeColor?: string;
     strokeWidth?: number;
     opacity?: number;
+    shadowColor?: string;
+    shadowStrength?: number;
     textContent?: string;
     fontSize?: number;
     fontFamily?: string;
