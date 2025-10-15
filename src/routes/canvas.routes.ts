@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { AuthRequest, authenticateUser } from '../middleware/auth';
 import { CanvasService } from '../services/CanvasService';
+import { PresenceService } from '../services/PresenceService';
 import Joi from 'joi';
 
 const router = Router();
@@ -228,6 +229,69 @@ router.get('/:canvasId/shapes', authenticateUser, async (req: AuthRequest, res: 
         });
     } catch (error: any) {
         console.error('Get shapes error:', error);
+        return res.status(500).json({
+            error: 'Internal server error',
+            message: error.message,
+        });
+    }
+});
+
+/**
+ * GET /api/canvas/:canvasId/sync
+ * Get full canvas state for reconnection (canvas + shapes + active users)
+ * Optimized endpoint for fast reconnection recovery
+ */
+router.get('/:canvasId/sync', authenticateUser, async (req: AuthRequest, res: Response) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const { canvasId } = req.params;
+
+        // Check access
+        const hasAccess = await CanvasService.checkAccess(canvasId, req.user.uid);
+        if (!hasAccess) {
+            return res.status(403).json({
+                error: 'Forbidden',
+                message: 'You do not have access to this canvas',
+            });
+        }
+
+        // Fetch all data in parallel for speed
+        const [canvas, shapes, activeUsers] = await Promise.all([
+            CanvasService.findById(canvasId),
+            CanvasService.getShapes(canvasId),
+            PresenceService.getActiveUsers(canvasId),
+        ]);
+
+        if (!canvas) {
+            return res.status(404).json({
+                error: 'Not found',
+                message: 'Canvas not found',
+            });
+        }
+
+        return res.json({
+            success: true,
+            data: {
+                canvas,
+                shapes,
+                activeUsers: activeUsers.map((p: any) => ({
+                    userId: p.user_id || p.userId,
+                    username: p.users?.username || 'Unknown',
+                    displayName: p.users?.display_name || p.users?.username || 'Unknown',
+                    email: p.users?.email || 'unknown@example.com',
+                    color: p.color,
+                    cursorX: p.cursor_x,
+                    cursorY: p.cursor_y,
+                    isActive: p.is_active,
+                })),
+            },
+            timestamp: Date.now(),
+        });
+    } catch (error: any) {
+        console.error('Sync canvas error:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error.message,

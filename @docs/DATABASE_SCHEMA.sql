@@ -133,7 +133,13 @@ CREATE INDEX idx_canvas_objects_canvas_id ON canvas_objects(canvas_id) WHERE is_
 CREATE INDEX idx_canvas_objects_z_index ON canvas_objects(canvas_id, z_index) WHERE is_deleted = FALSE;
 CREATE INDEX idx_canvas_objects_created_by ON canvas_objects(created_by);
 CREATE INDEX idx_canvas_objects_group_id ON canvas_objects(group_id) WHERE group_id IS NOT NULL AND is_deleted = FALSE;
-CREATE INDEX idx_canvas_objects_locked_at ON canvas_objects(locked_at) WHERE locked_at IS NOT NULL AND is_deleted = FALSE;
+CREATE INDEX idx_canvas_objects_locked_at ON canvas_objects(canvas_id, locked_at) WHERE is_deleted = FALSE AND locked_at IS NOT NULL;
+CREATE INDEX idx_canvas_objects_locked_by ON canvas_objects(locked_by, canvas_id) WHERE is_deleted = FALSE AND locked_by IS NOT NULL;
+
+-- Spatial indexes for position-based queries (viewport culling on backend)
+CREATE INDEX idx_canvas_objects_spatial_x ON canvas_objects(canvas_id, x) WHERE is_deleted = FALSE;
+CREATE INDEX idx_canvas_objects_spatial_y ON canvas_objects(canvas_id, y) WHERE is_deleted = FALSE;
+CREATE INDEX idx_canvas_objects_spatial_bounds ON canvas_objects(canvas_id, x, y) WHERE is_deleted = FALSE;
 
 -- Note: Shapes are automatically unlocked after 10 seconds of inactivity
 -- The locked_at timestamp is used to track when a shape was last locked
@@ -159,7 +165,9 @@ CREATE TABLE presence (
 
 -- Indexes for presence
 CREATE INDEX idx_presence_canvas_id ON presence(canvas_id);
+CREATE INDEX idx_presence_user_id ON presence(user_id);
 CREATE INDEX idx_presence_user_canvas ON presence(user_id, canvas_id);
+CREATE INDEX idx_presence_connection_id ON presence(connection_id);
 CREATE INDEX idx_presence_heartbeat ON presence(last_heartbeat);
 
 -- AI Commands Table
@@ -451,9 +459,16 @@ COMMENT ON TABLE canvas_activity IS 'Audit trail for canvas activities';
 1. Regular VACUUM and ANALYZE:
    - Run weekly: VACUUM ANALYZE;
    - Monitor table bloat
+   - After major data changes, run: 
+     ANALYZE canvas_objects;
+     ANALYZE presence;
+     ANALYZE users;
+     ANALYZE canvases;
 
 2. Index maintenance:
    - Rebuild indexes monthly: REINDEX TABLE table_name;
+   - Monitor index usage with pg_stat_user_indexes
+   - Check index scan counts to identify unused indexes
 
 3. Presence cleanup:
    - Run cleanup_stale_presence() every minute
@@ -464,6 +479,51 @@ COMMENT ON TABLE canvas_activity IS 'Audit trail for canvas activities';
    - Partition ai_commands by month for archival
 
 5. Connection pooling:
-   - Use PgBouncer for connection management
-   - Recommended pool size: 20-50 connections
+   - Supabase automatically handles connection pooling via PgBouncer
+   - Default pool size: 15 connections
+   - For high-traffic applications, consider:
+     * Upgrading Supabase plan for more connections
+     * Using transaction pooling mode
+     * Implementing connection retry logic in application code
+
+6. Query Optimization Tips:
+   - Always use canvas_id in WHERE clauses for shape queries
+   - Limit result sets with LIMIT clause (e.g., LIMIT 500 for viewport queries)
+   - Use SELECT only required columns, avoid SELECT *
+   - Use prepared statements to cache query plans
+   - Monitor slow queries with pg_stat_statements extension
+
+7. Spatial Queries (viewport culling):
+   - For viewport-based queries, use spatial indexes:
+     SELECT * FROM canvas_objects
+     WHERE canvas_id = $1
+       AND is_deleted = false
+       AND x >= $2 AND x <= $3
+       AND y >= $4 AND y <= $5
+     ORDER BY z_index ASC
+     LIMIT 500;
+
+8. Performance Monitoring:
+   - Enable slow query logging in Supabase dashboard
+   - Set log_min_duration_statement = 100 (log queries > 100ms)
+   - Check table sizes:
+     SELECT 
+       schemaname,
+       tablename,
+       pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) AS size
+     FROM pg_tables
+     WHERE schemaname = 'public'
+     ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
+   
+   - Check index usage:
+     SELECT 
+       schemaname,
+       tablename,
+       indexname,
+       idx_scan as index_scans,
+       idx_tup_read as tuples_read,
+       idx_tup_fetch as tuples_fetched
+     FROM pg_stat_user_indexes
+     WHERE schemaname = 'public'
+     ORDER BY idx_scan DESC;
 */

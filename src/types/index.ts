@@ -153,6 +153,7 @@ export type WSMessageType =
     | 'CANVAS_UPDATE'
     | 'CANVAS_SYNC'
     | 'CANVAS_SYNC_REQUEST'
+    | 'RECONNECT_REQUEST'
     | 'PING'
     | 'PONG'
     | 'ERROR'

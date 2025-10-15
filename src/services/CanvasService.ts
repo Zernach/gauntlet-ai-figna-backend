@@ -1,7 +1,70 @@
 import { getDatabaseClient } from '../config/database';
 import { Canvas, CanvasObject, CreateShapeRequest, UpdateShapeRequest } from '../types';
 
+/**
+ * Simple LRU cache for frequently accessed data
+ */
+class LRUCache<T> {
+    private cache: Map<string, { value: T; timestamp: number }> = new Map();
+    private maxSize: number;
+    private ttlMs: number;
+
+    constructor(maxSize: number = 100, ttlMs: number = 5000) {
+        this.maxSize = maxSize;
+        this.ttlMs = ttlMs;
+    }
+
+    get(key: string): T | null {
+        const entry = this.cache.get(key);
+        if (!entry) return null;
+
+        // Check if entry is expired
+        if (Date.now() - entry.timestamp > this.ttlMs) {
+            this.cache.delete(key);
+            return null;
+        }
+
+        // Move to end (most recent)
+        this.cache.delete(key);
+        this.cache.set(key, entry);
+        return entry.value;
+    }
+
+    set(key: string, value: T): void {
+        // Remove oldest entry if cache is full
+        if (this.cache.size >= this.maxSize) {
+            const firstKey = this.cache.keys().next().value;
+            if (firstKey !== undefined) {
+                this.cache.delete(firstKey);
+            }
+        }
+
+        this.cache.set(key, { value, timestamp: Date.now() });
+    }
+
+    invalidate(key: string): void {
+        this.cache.delete(key);
+    }
+
+    invalidatePattern(pattern: string): void {
+        const keys = Array.from(this.cache.keys());
+        for (const key of keys) {
+            if (key.includes(pattern)) {
+                this.cache.delete(key);
+            }
+        }
+    }
+
+    clear(): void {
+        this.cache.clear();
+    }
+}
+
 export class CanvasService {
+    // Cache instances
+    private static canvasCache = new LRUCache<Canvas>(10, 30000); // 30s TTL for canvases
+    private static shapesCache = new LRUCache<CanvasObject[]>(50, 5000); // 5s TTL for shapes
+    private static shapeCache = new LRUCache<CanvasObject>(200, 3000); // 3s TTL for individual shapes
     /**
      * Get the single global canvas (or create it if it doesn't exist)
      */
@@ -42,6 +105,12 @@ export class CanvasService {
      * Get canvas by ID
      */
     static async findById(canvasId: string): Promise<Canvas | null> {
+        // Check cache first
+        const cached = this.canvasCache.get(canvasId);
+        if (cached) {
+            return cached;
+        }
+
         const client = getDatabaseClient();
         const { data, error } = await client
             .from('canvases')
@@ -51,7 +120,10 @@ export class CanvasService {
             .single();
 
         if (error || !data) return null;
-        return data as Canvas;
+
+        const canvas = data as Canvas;
+        this.canvasCache.set(canvasId, canvas);
+        return canvas;
     }
 
     /**
@@ -95,7 +167,10 @@ export class CanvasService {
             throw error;
         }
 
-        return updatedCanvas as Canvas;
+        const canvas = updatedCanvas as Canvas;
+        // Invalidate cache on update
+        this.canvasCache.invalidate(canvasId);
+        return canvas;
     }
 
     /**
@@ -112,6 +187,13 @@ export class CanvasService {
      * Get all shapes for a canvas
      */
     static async getShapes(canvasId: string): Promise<CanvasObject[]> {
+        // Check cache first
+        const cacheKey = `shapes:${canvasId}`;
+        const cached = this.shapesCache.get(cacheKey);
+        if (cached) {
+            return cached;
+        }
+
         const client = getDatabaseClient();
         const { data, error } = await client
             .from('canvas_objects')
@@ -121,6 +203,40 @@ export class CanvasService {
             .order('z_index', { ascending: true });
 
         if (error) throw error;
+
+        const shapes = (data || []) as CanvasObject[];
+        this.shapesCache.set(cacheKey, shapes);
+        return shapes;
+    }
+
+    /**
+     * Get shapes in a specific viewport region (spatial query)
+     * Optimized for large canvases with 1000+ objects
+     * @param canvasId Canvas ID
+     * @param viewport Viewport bounds { minX, maxX, minY, maxY }
+     * @param limit Maximum number of shapes to return (default: 500)
+     */
+    static async getShapesInViewport(
+        canvasId: string,
+        viewport: { minX: number; maxX: number; minY: number; maxY: number },
+        limit: number = 500
+    ): Promise<CanvasObject[]> {
+        const client = getDatabaseClient();
+
+        // Use spatial query with indexed columns
+        const { data, error } = await client
+            .from('canvas_objects')
+            .select('*')
+            .eq('canvas_id', canvasId)
+            .eq('is_deleted', false)
+            .gte('x', viewport.minX)
+            .lte('x', viewport.maxX)
+            .gte('y', viewport.minY)
+            .lte('y', viewport.maxY)
+            .order('z_index', { ascending: true })
+            .limit(limit);
+
+        if (error) throw error;
         return (data || []) as CanvasObject[];
     }
 
@@ -128,6 +244,12 @@ export class CanvasService {
      * Get shape by ID
      */
     static async getShapeById(shapeId: string): Promise<CanvasObject | null> {
+        // Check cache first
+        const cached = this.shapeCache.get(shapeId);
+        if (cached) {
+            return cached;
+        }
+
         const client = getDatabaseClient();
         const { data, error } = await client
             .from('canvas_objects')
@@ -137,7 +259,10 @@ export class CanvasService {
             .single();
 
         if (error || !data) return null;
-        return data as CanvasObject;
+
+        const shape = data as CanvasObject;
+        this.shapeCache.set(shapeId, shape);
+        return shape;
     }
 
     /**
@@ -190,7 +315,11 @@ export class CanvasService {
             .single();
 
         if (error) throw error;
-        return shape as CanvasObject;
+
+        const createdShape = shape as CanvasObject;
+        // Invalidate shapes cache for this canvas
+        this.shapesCache.invalidate(`shapes:${canvasId}`);
+        return createdShape;
     }
 
     /**
@@ -241,13 +370,23 @@ export class CanvasService {
             throw error;
         }
 
-        return updatedShape as CanvasObject;
+        const shape = updatedShape as CanvasObject;
+        // Invalidate caches
+        this.shapeCache.invalidate(shapeId);
+        // Get canvas_id from the shape to invalidate shapes cache
+        if ((shape as any).canvas_id) {
+            this.shapesCache.invalidate(`shapes:${(shape as any).canvas_id}`);
+        }
+        return shape;
     }
 
     /**
      * Delete shape (soft delete)
      */
     static async deleteShape(shapeId: string): Promise<boolean> {
+        // Get shape first to invalidate canvas cache
+        const shape = await this.getShapeById(shapeId);
+
         const client = getDatabaseClient();
         const { error } = await client
             .from('canvas_objects')
@@ -257,6 +396,12 @@ export class CanvasService {
             })
             .eq('id', shapeId)
             .eq('is_deleted', false);
+
+        // Invalidate caches
+        this.shapeCache.invalidate(shapeId);
+        if (shape && (shape as any).canvas_id) {
+            this.shapesCache.invalidate(`shapes:${(shape as any).canvas_id}`);
+        }
 
         return !error;
     }

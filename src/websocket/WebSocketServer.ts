@@ -14,6 +14,19 @@ export class WebSocketServer {
     private canvasSubscriptions: Map<string, Set<string>> = new Map();
     private heartbeatInterval: NodeJS.Timeout | null = null;
     private autoUnlockInterval: NodeJS.Timeout | null = null;
+    private messageQueue: Map<string, any[]> = new Map(); // Queue messages during heavy load
+    private reconnectingClients: Set<string> = new Set(); // Track reconnecting clients
+
+    // Performance optimization: message batching
+    private messageBatchQueues: Map<string, WSMessage[]> = new Map();
+    private batchFlushInterval: NodeJS.Timeout | null = null;
+    private readonly BATCH_INTERVAL_MS = 16; // ~60fps batching
+
+    // Performance optimization: throttling maps per client
+    private cursorUpdateThrottles: Map<string, number> = new Map();
+    private shapeUpdateThrottles: Map<string, number> = new Map();
+    private readonly CURSOR_THROTTLE_MS = 25; // 40fps for cursors
+    private readonly SHAPE_THROTTLE_MS = 33; // 30fps for shape updates
 
     constructor(server: HTTPServer) {
         this.wss = new WSServer({
@@ -33,6 +46,77 @@ export class WebSocketServer {
         this.wss.on('connection', this.handleConnection.bind(this));
         this.startHeartbeat();
         this.startAutoUnlock();
+        this.startBatchFlushing();
+    }
+
+    /**
+     * Start periodic batch flushing for optimized message delivery
+     */
+    private startBatchFlushing(): void {
+        this.batchFlushInterval = setInterval(() => {
+            this.flushAllBatches();
+        }, this.BATCH_INTERVAL_MS);
+    }
+
+    /**
+     * Flush all pending message batches
+     */
+    private flushAllBatches(): void {
+        this.messageBatchQueues.forEach((batch, connectionId) => {
+            if (batch.length === 0) return;
+
+            const client = this.clients.get(connectionId);
+            if (!client || client.socket.readyState !== WebSocket.OPEN) {
+                this.messageBatchQueues.delete(connectionId);
+                return;
+            }
+
+            // Send all batched messages at once
+            batch.forEach(message => {
+                client.socket.send(JSON.stringify(message));
+            });
+
+            // Clear the batch
+            this.messageBatchQueues.set(connectionId, []);
+        });
+    }
+
+    /**
+     * Queue a message for batched delivery
+     */
+    private queueBatchedMessage(connectionId: string, message: WSMessage): void {
+        if (!this.messageBatchQueues.has(connectionId)) {
+            this.messageBatchQueues.set(connectionId, []);
+        }
+        this.messageBatchQueues.get(connectionId)!.push(message);
+    }
+
+    /**
+     * Broadcast with message batching for improved performance
+     */
+    private broadcastToCanvasBatched(
+        canvasId: string,
+        message: WSMessage,
+        excludeConnectionId?: string,
+        priority: 'high' | 'low' = 'low'
+    ): void {
+        const subscribers = this.canvasSubscriptions.get(canvasId);
+        if (!subscribers) return;
+
+        subscribers.forEach(connectionId => {
+            if (connectionId !== excludeConnectionId) {
+                const client = this.clients.get(connectionId);
+                if (client && client.socket.readyState === WebSocket.OPEN) {
+                    // High priority messages (shape create/delete) send immediately
+                    // Low priority (cursor, minor updates) batch for efficiency
+                    if (priority === 'high') {
+                        client.socket.send(JSON.stringify(message));
+                    } else {
+                        this.queueBatchedMessage(connectionId, message);
+                    }
+                }
+            }
+        });
     }
 
     private async handleConnection(ws: WebSocket, req: IncomingMessage): Promise<void> {
@@ -217,6 +301,12 @@ export class WebSocketServer {
                     await this.handleCanvasUpdate(client, message);
                     break;
 
+                case 'RECONNECT_REQUEST':
+                    // Handle reconnection with full state sync
+                    console.log(`🔄 Reconnection requested by ${client.user?.username}`);
+                    await this.sendCanvasSync(client);
+                    break;
+
                 default:
                     console.warn(`Unknown message type: ${message.type}`);
             }
@@ -229,24 +319,19 @@ export class WebSocketServer {
     private async handleCursorMove(client: WSClient, message: WSMessage): Promise<void> {
         const { x, y, viewportX, viewportY, viewportZoom } = message.payload || {};
 
+        // Throttle cursor updates per client
+        const now = Date.now();
+        const lastUpdate = this.cursorUpdateThrottles.get(client.id) || 0;
+        if (now - lastUpdate < this.CURSOR_THROTTLE_MS) {
+            return; // Skip this update due to throttling
+        }
+        this.cursorUpdateThrottles.set(client.id, now);
+
         // Ensure user has a color assigned
         const userColor = client.user?.avatarColor || this.assignNeonColor(client.userId);
 
-        // Update presence in database
-        await PresenceService.upsert({
-            userId: client.userId,
-            canvasId: client.canvasId,
-            cursorX: x,
-            cursorY: y,
-            viewportX,
-            viewportY,
-            viewportZoom,
-            color: userColor,
-            connectionId: client.id,
-        });
-
-        // Broadcast to other users on same canvas
-        this.broadcastToCanvas(client.canvasId, {
+        // Broadcast with low priority (batched) for performance
+        this.broadcastToCanvasBatched(client.canvasId, {
             type: 'CURSOR_MOVE',
             payload: {
                 userId: client.userId,
@@ -257,22 +342,43 @@ export class WebSocketServer {
                 x,
                 y,
             },
-        }, client.id);
+            timestamp: Date.now(),
+        }, client.id, 'low');
+
+        // Update presence in database asynchronously (non-blocking)
+        // Don't await - let it happen in background to keep sub-50ms
+        PresenceService.upsert({
+            userId: client.userId,
+            canvasId: client.canvasId,
+            cursorX: x,
+            cursorY: y,
+            viewportX,
+            viewportY,
+            viewportZoom,
+            color: userColor,
+            connectionId: client.id,
+        }).catch(err => console.error('Presence update error:', err));
     }
 
     private async handleShapeCreate(client: WSClient, message: WSMessage): Promise<void> {
-        const shape = await CanvasService.createShape(
-            client.canvasId,
-            client.userId,
-            message.payload
-        );
+        try {
+            const shape = await CanvasService.createShape(
+                client.canvasId,
+                client.userId,
+                message.payload
+            );
 
-        // Broadcast to all users including sender
-        this.broadcastToCanvas(client.canvasId, {
-            type: 'SHAPE_CREATE',
-            payload: { shape },
-            userId: client.userId,
-        });
+            // Broadcast to all users including sender with high priority (immediate)
+            this.broadcastToCanvasBatched(client.canvasId, {
+                type: 'SHAPE_CREATE',
+                payload: { shape },
+                userId: client.userId,
+                timestamp: Date.now(),
+            }, undefined, 'high');
+        } catch (error) {
+            console.error('Shape create error:', error);
+            this.sendError(client.socket, 'Failed to create shape');
+        }
     }
 
     private async handleShapeUpdate(client: WSClient, message: WSMessage): Promise<void> {
@@ -337,52 +443,79 @@ export class WebSocketServer {
             console.log(`🔓 Unlocking shape ${shapeId}`);
         }
 
-        const shape = await CanvasService.updateShape(
-            shapeId,
-            client.userId,
-            updatedData
-        );
+        try {
+            const shape = await CanvasService.updateShape(
+                shapeId,
+                client.userId,
+                updatedData
+            );
 
-        // Debug: Log the shape data being broadcast (Supabase returns snake_case)
-        console.log(`📤 Broadcasting SHAPE_UPDATE:`, {
-            id: (shape as any).id,
-            locked_at: (shape as any).locked_at,
-            locked_by: (shape as any).locked_by,
-            all_keys: Object.keys(shape),
-        });
+            // Throttle shape update broadcasts per shape (not per client)
+            const throttleKey = `${client.canvasId}:${shapeId}`;
+            const now = Date.now();
+            const lastUpdate = this.shapeUpdateThrottles.get(throttleKey) || 0;
 
-        // Broadcast to all users including sender
-        this.broadcastToCanvas(client.canvasId, {
-            type: 'SHAPE_UPDATE',
-            payload: { shape },
-            userId: client.userId,
-        });
+            // Always send lock/unlock immediately, throttle other updates
+            const isLockUpdate = updatedData.lockedAt !== undefined || updatedData.lockedBy !== undefined;
+            const shouldBroadcast = isLockUpdate || (now - lastUpdate >= this.SHAPE_THROTTLE_MS);
+
+            if (shouldBroadcast) {
+                this.shapeUpdateThrottles.set(throttleKey, now);
+
+                // Broadcast with low priority (batched) for better performance
+                this.broadcastToCanvasBatched(client.canvasId, {
+                    type: 'SHAPE_UPDATE',
+                    payload: {
+                        shape,
+                        lastModifiedBy: client.userId,
+                        lastModifiedAt: Date.now(),
+                    },
+                    userId: client.userId,
+                    timestamp: Date.now(),
+                }, undefined, isLockUpdate ? 'high' : 'low');
+            }
+        } catch (error) {
+            console.error('Shape update error:', error);
+            this.sendError(client.socket, 'Failed to update shape');
+        }
     }
 
     private async handleShapeDelete(client: WSClient, message: WSMessage): Promise<void> {
         const { shapeId } = message.payload;
 
-        await CanvasService.deleteShape(shapeId);
+        try {
+            await CanvasService.deleteShape(shapeId);
 
-        // Broadcast to all users including sender
-        this.broadcastToCanvas(client.canvasId, {
-            type: 'SHAPE_DELETE',
-            payload: { shapeId },
-            userId: client.userId,
-        });
+            // Broadcast to all users including sender with high priority (immediate)
+            this.broadcastToCanvasBatched(client.canvasId, {
+                type: 'SHAPE_DELETE',
+                payload: { shapeId },
+                userId: client.userId,
+                timestamp: Date.now(),
+            }, undefined, 'high');
+        } catch (error) {
+            console.error('Shape delete error:', error);
+            this.sendError(client.socket, 'Failed to delete shape');
+        }
     }
 
     private async handleBatchUpdate(client: WSClient, message: WSMessage): Promise<void> {
         const { updates } = message.payload;
 
-        const shapes = await CanvasService.batchUpdateShapes(updates, client.userId);
+        try {
+            const shapes = await CanvasService.batchUpdateShapes(updates, client.userId);
 
-        // Broadcast to all users including sender
-        this.broadcastToCanvas(client.canvasId, {
-            type: 'SHAPES_BATCH_UPDATE',
-            payload: { shapes },
-            userId: client.userId,
-        });
+            // Broadcast to all users including sender (sub-100ms target)
+            this.broadcastToCanvas(client.canvasId, {
+                type: 'SHAPES_BATCH_UPDATE',
+                payload: { shapes },
+                userId: client.userId,
+                timestamp: Date.now(),
+            });
+        } catch (error) {
+            console.error('Batch update error:', error);
+            this.sendError(client.socket, 'Failed to batch update shapes');
+        }
     }
 
     private async handlePresenceUpdate(client: WSClient, message: WSMessage): Promise<void> {
@@ -516,6 +649,10 @@ export class WebSocketServer {
         if (!client) return;
 
         console.log(`🔌 User ${client.user?.username} disconnected`);
+
+        // Clean up performance tracking for this client
+        this.cursorUpdateThrottles.delete(connectionId);
+        this.messageBatchQueues.delete(connectionId);
 
         // Remove presence
         await PresenceService.removeByConnectionId(connectionId);
@@ -662,7 +799,7 @@ export class WebSocketServer {
     }
 
     private startAutoUnlock(): void {
-        // Check for expired locks every 2 seconds
+        // Check for expired locks every 1 second for faster unlock response
         this.autoUnlockInterval = setInterval(async () => {
             // Get all active canvases
             const activeCanvases = new Set<string>();
@@ -699,7 +836,7 @@ export class WebSocketServer {
                     console.error(`Error checking expired locks for canvas ${canvasId}:`, error);
                 }
             }
-        }, 2000); // Check every 2 seconds
+        }, 1000); // Check every 1 second for faster response
     }
 
     public close(): void {
@@ -710,6 +847,13 @@ export class WebSocketServer {
         if (this.autoUnlockInterval) {
             clearInterval(this.autoUnlockInterval);
         }
+
+        if (this.batchFlushInterval) {
+            clearInterval(this.batchFlushInterval);
+        }
+
+        // Flush any remaining batches before closing
+        this.flushAllBatches();
 
         this.clients.forEach((client) => {
             client.socket.close(1000, 'Server shutting down');
