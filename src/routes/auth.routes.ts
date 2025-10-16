@@ -1,14 +1,34 @@
 import { Router, Response } from 'express';
-import { AuthRequest, authenticateUser } from '../middleware/auth';
+import { AuthRequest, enhancedAuthenticateUser } from '../middleware/enhancedAuth';
 import { UserService } from '../services/UserService';
+import { getCSRFTokenHandler } from '../middleware/csrfProtection';
+import { refreshTokenHandler, getTokenInfoHandler } from '../utils/tokenRefresh';
 
 const router = Router();
+
+/**
+ * GET /api/auth/csrf-token
+ * Get CSRF token for authenticated user
+ */
+router.get('/csrf-token', enhancedAuthenticateUser, getCSRFTokenHandler);
+
+/**
+ * POST /api/auth/refresh
+ * Validate token refresh
+ */
+router.post('/refresh', enhancedAuthenticateUser, refreshTokenHandler);
+
+/**
+ * GET /api/auth/token-info
+ * Get token expiry information
+ */
+router.get('/token-info', enhancedAuthenticateUser, getTokenInfoHandler);
 
 /**
  * GET /api/auth/me
  * Get current authenticated user
  */
-router.get('/me', authenticateUser, async (req: AuthRequest, res: Response) => {
+router.get('/me', enhancedAuthenticateUser, async (req: AuthRequest, res: Response) => {
     try {
         if (!req.user) {
             return res.status(401).json({ error: 'Unauthorized' });
@@ -50,7 +70,7 @@ router.get('/me', authenticateUser, async (req: AuthRequest, res: Response) => {
  * PUT /api/auth/profile
  * Update user profile
  */
-router.put('/profile', authenticateUser, async (req: AuthRequest, res: Response) => {
+router.put('/profile', enhancedAuthenticateUser, async (req: AuthRequest, res: Response) => {
     try {
         if (!req.user) {
             return res.status(401).json({ error: 'Unauthorized' });
@@ -83,7 +103,7 @@ router.put('/profile', authenticateUser, async (req: AuthRequest, res: Response)
  * POST /api/auth/logout
  * Logout user (update online status)
  */
-router.post('/logout', authenticateUser, async (req: AuthRequest, res: Response) => {
+router.post('/logout', enhancedAuthenticateUser, async (req: AuthRequest, res: Response) => {
     try {
         if (!req.user) {
             return res.status(401).json({ error: 'Unauthorized' });

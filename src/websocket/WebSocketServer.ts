@@ -7,6 +7,8 @@ import { CanvasService } from '../services/CanvasService';
 import { PresenceService } from '../services/PresenceService';
 import { UserService } from '../services/UserService';
 import { v4 as uuidv4 } from 'uuid';
+import { securityLogger, SecurityEventType } from '../utils/securityLogger';
+import { isValidCanvasId, getClientIP } from '../utils/security';
 
 export class WebSocketServer {
     private wss: WSServer;
@@ -121,78 +123,116 @@ export class WebSocketServer {
 
     private async handleConnection(ws: WebSocket, req: IncomingMessage): Promise<void> {
         const connectionId = uuidv4();
-        console.log(`🔗 New WebSocket connection: ${connectionId}`);
+        const clientIP = getClientIP(req as any);
+        console.log(`🔗 New WebSocket connection: ${connectionId} from ${clientIP}`);
 
         try {
             // Parse query parameters
             const { query } = parse(req.url || '', true);
-            const token = query.token as string;
-            const userId = query.userId as string;
+            let token = query.token as string;
             const canvasId = query.canvasId as string;
 
+            // Try to extract token from Sec-WebSocket-Protocol header (more secure)
+            // Format: "Bearer.{token}" where periods replace spaces for protocol compatibility
+            const protocols = req.headers['sec-websocket-protocol'];
+            if (protocols && !token) {
+                const protocolList = protocols.split(',').map(p => p.trim());
+                const bearerProtocol = protocolList.find(p => p.startsWith('Bearer.'));
+                if (bearerProtocol) {
+                    token = bearerProtocol.substring(7); // Remove "Bearer."
+                }
+            }
+
+            // Validate canvasId
             if (!canvasId) {
+                securityLogger.logWSConnection(
+                    SecurityEventType.WS_CONNECTION_FAILURE,
+                    'Missing canvasId',
+                    undefined,
+                    clientIP
+                );
                 this.sendError(ws, 'Missing canvasId');
                 ws.close(1008, 'Missing canvasId parameter');
                 return;
             }
 
-            // Determine userId from token or direct userId parameter
-            let authenticatedUserId: string;
-            let decodedToken: any = null;
+            if (!isValidCanvasId(canvasId)) {
+                securityLogger.logWSConnection(
+                    SecurityEventType.WS_CONNECTION_FAILURE,
+                    'Invalid canvasId format',
+                    undefined,
+                    clientIP,
+                    { canvasId }
+                );
+                this.sendError(ws, 'Invalid canvasId format');
+                ws.close(1008, 'Invalid canvasId');
+                return;
+            }
 
-            if (token) {
-                // Production mode: verify Supabase token
+            // Verify token is present
+            if (!token) {
+                securityLogger.logWSConnection(
+                    SecurityEventType.WS_CONNECTION_FAILURE,
+                    'Missing authentication token',
+                    undefined,
+                    clientIP,
+                    { canvasId }
+                );
+                this.sendError(ws, 'Missing authentication token');
+                ws.close(1008, 'Authentication required');
+                return;
+            }
+
+            // Verify Supabase token
+            let decodedToken: any;
+            let authenticatedUserId: string;
+
+            try {
                 decodedToken = await verifySupabaseToken(token);
                 authenticatedUserId = decodedToken.userId;
-            } else if (userId) {
-                // Development mode: accept userId directly
-                console.log('⚠️  Development mode: accepting userId without token verification');
-                authenticatedUserId = userId;
-            } else {
-                this.sendError(ws, 'Missing token or userId');
-                ws.close(1008, 'Missing authentication parameters');
+            } catch (tokenError: any) {
+                securityLogger.logWSConnection(
+                    SecurityEventType.WS_CONNECTION_FAILURE,
+                    'Token verification failed',
+                    undefined,
+                    clientIP,
+                    { canvasId, error: tokenError.message }
+                );
+                this.sendError(ws, 'Invalid or expired token');
+                ws.close(1008, 'Authentication failed');
                 return;
             }
 
             // Check canvas access
             const hasAccess = await CanvasService.checkAccess(canvasId, authenticatedUserId);
             if (!hasAccess) {
+                securityLogger.logWSConnection(
+                    SecurityEventType.CANVAS_ACCESS_DENIED,
+                    'Canvas access denied',
+                    authenticatedUserId,
+                    clientIP,
+                    { canvasId }
+                );
                 this.sendError(ws, 'Access denied to canvas');
                 ws.close(1008, 'Unauthorized');
                 return;
             }
 
             // Get or create user info
-            let user: any;
-
-            if (token) {
-                // Production mode: get or create user from Supabase auth data
-                console.log('🔐 Token authentication - creating/getting user:', authenticatedUserId);
-                const supabaseData = {
-                    uid: authenticatedUserId,
-                    email: (decodedToken as any).email || 'user@example.com',
-                    name: (decodedToken as any).user_metadata?.name || (decodedToken as any).user_metadata?.full_name,
-                    picture: (decodedToken as any).user_metadata?.avatar_url || (decodedToken as any).user_metadata?.picture,
-                };
-                console.log('📝 Supabase data:', supabaseData);
-                user = await UserService.getOrCreateFromSupabase(supabaseData);
-                console.log('✅ User created/found:', user?.username);
-            } else {
-                // Development mode: find or create demo user
-                user = await UserService.findBySupabaseId(authenticatedUserId);
-                if (!user) {
-                    // Development mode: create user with demo data and unique username
-                    const timestamp = Date.now();
-                    const shortId = authenticatedUserId.substring(0, 8);
-                    user = await UserService.create({
-                        id: authenticatedUserId,
-                        username: `demo_user_${shortId}_${timestamp}`,
-                        email: `demo_${shortId}@figna.com`,
-                        displayName: 'Demo User',
-                        avatarColor: '#3B82F6',
-                    });
-                }
-            }
+            console.log('🔐 Token authentication - creating/getting user:', authenticatedUserId);
+            const supabaseData = {
+                uid: authenticatedUserId,
+                email: decodedToken.email || 'user@example.com',
+                name: decodedToken.user_metadata?.name ||
+                    decodedToken.user_metadata?.full_name ||
+                    decodedToken.email?.split('@')[0] ||
+                    'User',
+                picture: decodedToken.user_metadata?.avatar_url ||
+                    decodedToken.user_metadata?.picture,
+            };
+            console.log('📝 Supabase data:', supabaseData);
+            const user = await UserService.getOrCreateFromSupabase(supabaseData);
+            console.log('✅ User created/found:', user?.username);
 
             // Create client
             const client: WSClient = {
@@ -244,10 +284,26 @@ export class WebSocketServer {
             ws.on('error', (error) => this.handleError(connectionId, error));
             ws.on('pong', () => this.handlePong(connectionId));
 
+            // Log successful connection
+            securityLogger.logWSConnection(
+                SecurityEventType.WS_CONNECTION_SUCCESS,
+                `User ${user.username} connected to canvas ${canvasId}`,
+                authenticatedUserId,
+                clientIP,
+                { canvasId, username: user.username }
+            );
+
             console.log(`✅ User ${user.username} connected to canvas ${canvasId}`);
         } catch (error: any) {
             console.error('Connection error:', error);
-            this.sendError(ws, error.message);
+            securityLogger.logWSConnection(
+                SecurityEventType.WS_CONNECTION_FAILURE,
+                'Connection error',
+                undefined,
+                clientIP,
+                { error: error.message }
+            );
+            this.sendError(ws, 'Connection failed');
             ws.close(1011, 'Internal server error');
         }
     }
