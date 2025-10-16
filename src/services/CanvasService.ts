@@ -303,6 +303,7 @@ export class CanvasService {
                 opacity: shapeData.opacity || 1.0,
                 shadow_color: shapeData.shadowColor,
                 shadow_strength: shapeData.shadowStrength,
+                border_radius: shapeData.borderRadius || 0,
                 text_content: shapeData.textContent,
                 font_size: shapeData.fontSize,
                 font_family: shapeData.fontFamily || 'Inter',
@@ -336,7 +337,7 @@ export class CanvasService {
         const fieldMap: Record<string, string> = {
             x: 'x', y: 'y', width: 'width', height: 'height', radius: 'radius',
             rotation: 'rotation', color: 'color', strokeColor: 'stroke_color',
-            strokeWidth: 'stroke_width', opacity: 'opacity', shadowColor: 'shadow_color', shadowStrength: 'shadow_strength', textContent: 'text_content',
+            strokeWidth: 'stroke_width', opacity: 'opacity', shadowColor: 'shadow_color', shadowStrength: 'shadow_strength', borderRadius: 'border_radius', textContent: 'text_content',
             fontSize: 'font_size', fontFamily: 'font_family', fontWeight: 'font_weight',
             textAlign: 'text_align', zIndex: 'z_index', lockedAt: 'locked_at',
             lockedBy: 'locked_by', isVisible: 'is_visible'

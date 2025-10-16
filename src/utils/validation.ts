@@ -104,6 +104,10 @@ export function validateShapeUpdate(data: any): void {
         throw new ValidationError('radius must be a positive number');
     }
 
+    if (data.borderRadius !== undefined && (typeof data.borderRadius !== 'number' || data.borderRadius < 0)) {
+        throw new ValidationError('borderRadius must be a non-negative number');
+    }
+
     if (data.rotation !== undefined && typeof data.rotation !== 'number') {
         throw new ValidationError('rotation must be a number');
     }

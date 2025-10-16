@@ -61,6 +61,7 @@ export interface CanvasObject {
     opacity: number;
     shadowColor?: string;
     shadowStrength?: number;
+    borderRadius?: number;
     textContent?: string;
     fontSize?: number;
     fontFamily: string;
@@ -215,6 +216,7 @@ export interface CreateShapeRequest {
     opacity?: number;
     shadowColor?: string;
     shadowStrength?: number;
+    borderRadius?: number;
     textContent?: string;
     fontSize?: number;
     fontFamily?: string;
@@ -236,6 +238,7 @@ export interface UpdateShapeRequest {
     opacity?: number;
     shadowColor?: string;
     shadowStrength?: number;
+    borderRadius?: number;
     textContent?: string;
     fontSize?: number;
     fontFamily?: string;

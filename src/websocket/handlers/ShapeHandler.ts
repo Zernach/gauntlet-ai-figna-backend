@@ -56,6 +56,11 @@ export class ShapeHandler extends BaseHandler {
         }
 
         try {
+            // Debug log for borderRadius updates
+            if (updates.borderRadius !== undefined) {
+                console.log('🔵 Border radius update received:', { shapeId, borderRadius: updates.borderRadius });
+            }
+
             // Validate updates
             validateShapeUpdate(updates);
 
@@ -76,12 +81,22 @@ export class ShapeHandler extends BaseHandler {
             // Process lock state changes
             const updatedData = this.processLockState(updates, client.userId);
 
+            // Debug log for borderRadius before DB update
+            if (updatedData.borderRadius !== undefined) {
+                console.log('🟢 Border radius before DB update:', { shapeId, borderRadius: updatedData.borderRadius, allUpdates: Object.keys(updatedData) });
+            }
+
             // Update shape in database
             const shape = await CanvasService.updateShape(
                 shapeId,
                 client.userId,
                 updatedData
             );
+
+            // Debug log after DB update
+            if (updatedData.borderRadius !== undefined) {
+                console.log('🟣 Shape after DB update:', { shapeId, borderRadius: (shape as any).border_radius });
+            }
 
             // Throttle broadcasts (except for lock/unlock)
             const isLockUpdate = updatedData.lockedAt !== undefined || updatedData.lockedBy !== undefined;

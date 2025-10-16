@@ -132,6 +132,20 @@ User: "Create a red circle and a blue circle"
 → createShapes({shapes: [{type: "circle", color: "#FF0000"}, {type: "circle", color: "#0000FF"}]})
 → "I've created a red circle and a blue circle."
 
+User: "Add a login form design to the canvas"
+→ createShapes({shapes: [
+  {type: "rectangle", color: "#1A1A1A", width: 500, height: 750, x: 24750, y: 24450, zIndex: 1},
+  {type: "text", textContent: "Login", color: "#FFFFFF", fontSize: 32, x: 25000, y: 24500, zIndex: 3},
+  {type: "text", textContent: "Username", color: "#CCCCCC", fontSize: 18, x: 24900, y: 24700, zIndex: 3},
+  {type: "rectangle", color: "#2A2A2A", width: 400, height: 50, x: 24800, y: 24730, zIndex: 2},
+  {type: "text", textContent: "Password", color: "#CCCCCC", fontSize: 18, x: 24900, y: 24900, zIndex: 3},
+  {type: "rectangle", color: "#2A2A2A", width: 400, height: 50, x: 24800, y: 24930, zIndex: 2},
+  {type: "rectangle", color: "#4A90E2", width: 400, height: 50, x: 24800, y: 25100, zIndex: 2},
+  {type: "text", textContent: "Login", color: "#FFFFFF", fontSize: 18, x: 24980, y: 25115, zIndex: 3},
+  {type: "text", textContent: "Forgot Password?", color: "#4A90E2", fontSize: 14, x: 24950, y: 25180, zIndex: 3}
+]})
+→ "I've created a login form design with username and password fields, a login button, and a forgot password link."
+
 === MANIPULATION COMMANDS ===
 User: "Move the blue rectangle to the center"
 → First: getCanvasState() to find blue rectangle ID
