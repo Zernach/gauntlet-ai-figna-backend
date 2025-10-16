@@ -183,11 +183,13 @@ export class UserService {
 
     /**
      * Generate random avatar color from neon palette
+     * NOTE: #00ff00 (bright neon green) is reserved for FPS connectivity status and excluded from user colors
+     * NOTE: #72fa41 is also excluded from user colors
      */
     private static generateRandomColor(): string {
         const NEON_COLORS = [
-            '#72fa41', '#24ccff', '#fbff00', '#ff69b4', '#00ffff',
-            '#ff00ff', '#00ff00', '#ff0080', '#80ff00', '#ff8000',
+            '#24ccff', '#fbff00', '#ff69b4', '#00ffff',
+            '#ff00ff', '#ff0080', '#80ff00', '#ff8000',
             '#0080ff', '#ff0040', '#40ff00', '#00ff80', '#8000ff'
         ];
         return NEON_COLORS[Math.floor(Math.random() * NEON_COLORS.length)];

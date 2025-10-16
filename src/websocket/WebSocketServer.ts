@@ -887,8 +887,8 @@ export class WebSocketServer {
      */
     private assignNeonColor(userId: string): string {
         const NEON_COLORS = [
-            '#72fa41', '#24ccff', '#fbff00', '#ff69b4', '#00ffff',
-            '#ff00ff', '#00ff00', '#ff0080', '#80ff00', '#ff8000',
+            '#24ccff', '#fbff00', '#ff69b4', '#00ffff',
+            '#ff00ff', '#ff0080', '#80ff00', '#ff8000',
             '#0080ff', '#ff0040', '#40ff00', '#00ff80', '#8000ff'
         ];
         const colorIndex = parseInt(userId.slice(0, 8), 16) % NEON_COLORS.length;

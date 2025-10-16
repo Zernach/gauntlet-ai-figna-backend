@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import authRoutes from './auth.routes';
 import canvasRoutes from './canvas.routes';
+import voiceRoutes from './voice.routes';
 
 const router = Router();
 
@@ -30,6 +31,7 @@ router.get('/', (req, res) => {
 // Mount route modules
 router.use('/auth', authRoutes);
 router.use('/canvas', canvasRoutes);
+router.use('/voice', voiceRoutes);
 
 export default router;
 
