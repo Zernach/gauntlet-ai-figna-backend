@@ -67,8 +67,8 @@ export function validateBatchShapeRequest(req: AuthRequest, res: Response, next:
         return;
     }
 
-    // Limit batch size
-    const maxBatchSize = 100;
+    // Limit batch size - generous limit to allow agent to follow instructions
+    const maxBatchSize = 5000;
     if (shapes.length > maxBatchSize) {
         securityLogger.logFromRequest(
             req,
