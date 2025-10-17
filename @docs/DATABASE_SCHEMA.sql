@@ -402,28 +402,68 @@ WHERE c.is_deleted = FALSE
 GROUP BY c.id, c.name, c.owner_id;
 
 -- ==========================================
--- SEED DATA (Optional)
+-- SEED DATA (System Resources)
 -- ==========================================
 
--- Insert demo user
-INSERT INTO users (id, username, email, display_name, avatar_color)
+-- Insert system user for owning public resources
+-- This user owns the public canvas and other system resources
+INSERT INTO users (id, username, email, display_name, avatar_color, is_online, created_at, updated_at)
 VALUES (
     '00000000-0000-0000-0000-000000000001',
-    'demo_user',
-    'demo@figna.com',
-    'Demo User',
-    '#3B82F6'
-) ON CONFLICT (email) DO NOTHING;
+    'system',
+    'system@figna.app',
+    'System',
+    '#3B82F6',
+    FALSE,
+    NOW(),
+    NOW()
+) ON CONFLICT (email) DO UPDATE SET
+    username = EXCLUDED.username,
+    display_name = EXCLUDED.display_name;
 
--- Insert demo canvas
-INSERT INTO canvases (id, owner_id, name, description, is_public)
+-- Insert public canvas accessible by all users
+-- This canvas appears at the top of every user's canvas list
+-- Cannot be deleted or renamed by any user
+INSERT INTO canvases (
+    id,
+    owner_id,
+    name,
+    description,
+    is_public,
+    is_template,
+    background_color,
+    viewport_x,
+    viewport_y,
+    viewport_zoom,
+    grid_enabled,
+    grid_size,
+    snap_to_grid,
+    created_at,
+    updated_at,
+    last_accessed_at
+)
 VALUES (
-    '00000000-0000-0000-0000-000000000002',
+    '00000000-0000-0000-0000-000000000000',
     '00000000-0000-0000-0000-000000000001',
-    'Demo Canvas',
-    'A sample canvas for testing',
-    TRUE
-) ON CONFLICT (id) DO NOTHING;
+    'Public Canvas',
+    'A shared canvas accessible by all users',
+    TRUE,
+    FALSE,
+    '#1a1a1a',
+    0,
+    0,
+    1.0,
+    FALSE,
+    20,
+    FALSE,
+    NOW(),
+    NOW(),
+    NOW()
+) ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    description = EXCLUDED.description,
+    is_public = EXCLUDED.is_public,
+    owner_id = EXCLUDED.owner_id;
 
 -- ==========================================
 -- PERMISSIONS (Run as superuser)

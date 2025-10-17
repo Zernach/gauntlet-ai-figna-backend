@@ -1,5 +1,6 @@
 import { getDatabaseClient } from '../config/database';
 import { User } from '../types';
+import { CanvasService } from './CanvasService';
 
 export class UserService {
     /**
@@ -132,8 +133,10 @@ export class UserService {
     }): Promise<User> {
         // Check if user exists
         let user = await this.findBySupabaseId(supabaseData.uid);
+        let isNewUser = false;
 
         if (!user) {
+            isNewUser = true;
             // Create new user
             let username = supabaseData.email.split('@')[0];
             const avatarColor = this.generateRandomColor();
@@ -176,21 +179,32 @@ export class UserService {
                     }
                 }
             }
+
+            // Create default canvas for new user
+            if (user) {
+                try {
+                    await CanvasService.create(user.id, {
+                        name: 'My First Canvas',
+                        description: 'Welcome to Figna! Start creating here.',
+                        backgroundColor: '#1a1a1a',
+                        isPublic: false,
+                    });
+                    console.log(`✅ Created default canvas for new user: ${user.email}`);
+                } catch (canvasError: any) {
+                    console.error('Error creating default canvas for new user:', canvasError);
+                    // Don't throw - user creation succeeded, canvas creation is a nice-to-have
+                }
+            }
         }
 
         return user!;
     }
 
-    /**
-     * Generate random avatar color from neon palette
-     * NOTE: #00ff00 (bright neon green) is reserved for FPS connectivity status and excluded from user colors
-     * NOTE: #72fa41 is also excluded from user colors
-     */
     private static generateRandomColor(): string {
         const NEON_COLORS = [
             '#24ccff', '#fbff00', '#ff69b4', '#00ffff',
             '#ff00ff', '#ff0080', '#80ff00', '#ff8000',
-            '#0080ff', '#ff0040', '#40ff00', '#00ff80', '#8000ff'
+            '#0080ff', '#ff0040', '#00ff80', '#8000ff'
         ];
         return NEON_COLORS[Math.floor(Math.random() * NEON_COLORS.length)];
     }

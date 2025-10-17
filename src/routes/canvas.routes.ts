@@ -246,6 +246,13 @@ router.delete('/:canvasId', authenticateUser, async (req: AuthRequest, res: Resp
             });
         }
 
+        if (error.message === 'The public canvas cannot be deleted') {
+            return res.status(403).json({
+                error: 'Forbidden',
+                message: error.message,
+            });
+        }
+
         return res.status(500).json({
             error: 'Internal server error',
             message: error.message,

@@ -65,12 +65,110 @@ export class CanvasService {
     private static canvasCache = new LRUCache<Canvas>(10, 30000); // 30s TTL for canvases
     private static shapesCache = new LRUCache<CanvasObject[]>(50, 5000); // 5s TTL for shapes
     private static shapeCache = new LRUCache<CanvasObject>(200, 3000); // 3s TTL for individual shapes
+
+    // Public canvas ID - hardcoded for global shared canvas
+    private static readonly PUBLIC_CANVAS_ID = '00000000-0000-0000-0000-000000000000';
+    private static readonly PUBLIC_CANVAS_OWNER_ID = '00000000-0000-0000-0000-000000000001'; // System user
+
+    /**
+     * Ensure the system user exists (for owning public resources)
+     */
+    private static async ensureSystemUser(): Promise<void> {
+        const client = getDatabaseClient();
+
+        // Check if system user already exists
+        const { data: existingUser } = await client
+            .from('users')
+            .select('id')
+            .eq('id', this.PUBLIC_CANVAS_OWNER_ID)
+            .single();
+
+        if (existingUser) {
+            return; // System user already exists
+        }
+
+        // Create system user
+        const { error: userError } = await client
+            .from('users')
+            .insert({
+                id: this.PUBLIC_CANVAS_OWNER_ID,
+                username: 'system',
+                email: 'system@figna.app',
+                display_name: 'System',
+                avatar_color: '#3B82F6',
+                is_online: false,
+            });
+
+        if (userError) {
+            console.error('Error creating system user:', userError);
+            // Don't throw - system user might already exist (race condition)
+        } else {
+            console.log('✅ Created system user');
+        }
+    }
+
+    /**
+     * Ensure the public canvas exists, create it if it doesn't
+     */
+    private static async ensurePublicCanvas(): Promise<Canvas> {
+        const client = getDatabaseClient();
+
+        // First ensure system user exists
+        await this.ensureSystemUser();
+
+        // Try to find existing public canvas
+        const { data: existingCanvas } = await client
+            .from('canvases')
+            .select('*')
+            .eq('id', this.PUBLIC_CANVAS_ID)
+            .eq('is_deleted', false)
+            .single();
+
+        if (existingCanvas) {
+            return existingCanvas as Canvas;
+        }
+
+        // Create the public canvas if it doesn't exist
+        const { data: newCanvas, error: createError } = await client
+            .from('canvases')
+            .insert({
+                id: this.PUBLIC_CANVAS_ID,
+                owner_id: this.PUBLIC_CANVAS_OWNER_ID,
+                name: 'Public Canvas',
+                description: 'A shared canvas accessible by all users',
+                is_public: true,
+                is_template: false,
+                background_color: '#1a1a1a',
+                viewport_x: 0,
+                viewport_y: 0,
+                viewport_zoom: 1.0,
+                grid_enabled: false,
+                grid_size: 20,
+                snap_to_grid: false,
+                last_accessed_at: new Date().toISOString(),
+            })
+            .select()
+            .single();
+
+        if (createError) {
+            console.error('Error creating public canvas:', createError);
+            throw createError;
+        }
+
+        console.log('✅ Created public canvas');
+        return newCanvas as Canvas;
+    }
+
     /**
      * Get all canvases accessible to a user (owned + shared)
+     * Always includes the public canvas at the top
      * Ordered by last accessed time (most recent first)
      */
     static async getUserCanvases(userId: string): Promise<Canvas[]> {
         const client = getDatabaseClient();
+
+        // Ensure public canvas exists
+        const publicCanvas = await this.ensurePublicCanvas();
 
         // Get canvases where user is owner or collaborator
         const { data: ownedCanvases, error: ownedError } = await client
@@ -83,8 +181,8 @@ export class CanvasService {
         if (ownedError) throw ownedError;
 
         // TODO: Add collaborator canvases when collaboration feature is implemented
-        // For now, just return owned canvases
-        return (ownedCanvases || []) as Canvas[];
+        // Return public canvas first, then user's owned canvases
+        return [publicCanvas, ...(ownedCanvases || [])] as Canvas[];
     }
 
     /**
@@ -215,9 +313,15 @@ export class CanvasService {
     /**
      * Delete canvas (soft delete)
      * Only owner can delete the canvas
+     * Public canvas cannot be deleted
      */
     static async delete(canvasId: string, userId: string): Promise<boolean> {
         const client = getDatabaseClient();
+
+        // Prevent deletion of public canvas
+        if (canvasId === this.PUBLIC_CANVAS_ID) {
+            throw new Error('The public canvas cannot be deleted');
+        }
 
         // First check if user is the owner
         const canvas = await this.findById(canvasId);
@@ -501,6 +605,11 @@ export class CanvasService {
      */
     static async checkAccess(canvasId: string, userId: string): Promise<boolean> {
         const client = getDatabaseClient();
+
+        // Public canvas is accessible to everyone
+        if (canvasId === this.PUBLIC_CANVAS_ID) {
+            return true;
+        }
 
         const { data, error } = await client
             .from('canvases')
