@@ -363,6 +363,10 @@ export class WebSocketServer {
                     await this.sendCanvasSync(client);
                     break;
 
+                case 'SWITCH_CANVAS':
+                    await this.handleCanvasSwitch(client, message);
+                    break;
+
                 default:
                     console.warn(`Unknown message type: ${message.type}`);
             }
@@ -648,6 +652,102 @@ export class WebSocketServer {
             payload: { canvas },
             userId: client.userId,
         });
+    }
+
+    private async handleCanvasSwitch(client: WSClient, message: WSMessage): Promise<void> {
+        const { canvasId: newCanvasId } = message.payload;
+
+        if (!newCanvasId || !isValidCanvasId(newCanvasId)) {
+            this.sendError(client.socket, 'Invalid canvasId');
+            return;
+        }
+
+        // Check if user has access to the new canvas
+        const hasAccess = await CanvasService.checkAccess(newCanvasId, client.userId);
+        if (!hasAccess) {
+            this.sendError(client.socket, 'Access denied to canvas');
+            this.sendToClient(client.id, {
+                type: 'CANVAS_SWITCHED',
+                payload: { canvasId: newCanvasId, success: false, error: 'Access denied' },
+            });
+            return;
+        }
+
+        const oldCanvasId = client.canvasId;
+        console.log(`🔄 User ${client.user?.username} switching canvas: ${oldCanvasId} -> ${newCanvasId}`);
+
+        try {
+            // 1. Remove presence from old canvas
+            await PresenceService.removeByConnectionId(client.id);
+
+            // 2. Notify old canvas users that user is leaving
+            this.broadcastToCanvas(oldCanvasId, {
+                type: 'USER_LEAVE',
+                payload: {
+                    userId: client.userId,
+                    username: client.user?.username,
+                },
+            }, client.id);
+
+            // 3. Unsubscribe from old canvas
+            this.unsubscribeFromCanvas(client.id, oldCanvasId);
+
+            // 4. Update client's canvasId
+            client.canvasId = newCanvasId;
+
+            // 5. Subscribe to new canvas
+            this.subscribeToCanvas(client.id, newCanvasId);
+
+            // 6. Ensure user has a color assigned
+            const userColor = client.user?.avatarColor || this.assignNeonColor(client.userId);
+
+            // 7. Create presence record for new canvas
+            await PresenceService.upsert({
+                userId: client.userId,
+                canvasId: newCanvasId,
+                cursorX: 0,
+                cursorY: 0,
+                color: userColor,
+                connectionId: client.id,
+            });
+
+            // 8. Update last accessed timestamp for new canvas
+            await CanvasService.updateLastAccessed(newCanvasId);
+
+            // 9. Send canvas sync for new canvas
+            await this.sendCanvasSync(client);
+
+            // 10. Notify new canvas users that user joined
+            this.broadcastToCanvas(newCanvasId, {
+                type: 'USER_JOIN',
+                payload: {
+                    userId: client.userId,
+                    username: client.user?.username,
+                    displayName: client.user?.displayName,
+                    email: client.user?.email,
+                    color: userColor,
+                },
+            }, client.id);
+
+            // 11. Broadcast updated active users lists
+            await this.broadcastActiveUsers(oldCanvasId);
+            await this.broadcastActiveUsers(newCanvasId);
+
+            // 12. Send success confirmation to client
+            this.sendToClient(client.id, {
+                type: 'CANVAS_SWITCHED',
+                payload: { canvasId: newCanvasId, success: true },
+            });
+
+            console.log(`✅ User ${client.user?.username} successfully switched to canvas ${newCanvasId}`);
+        } catch (error: any) {
+            console.error('Canvas switch error:', error);
+            this.sendError(client.socket, 'Failed to switch canvas');
+            this.sendToClient(client.id, {
+                type: 'CANVAS_SWITCHED',
+                payload: { canvasId: newCanvasId, success: false, error: error.message },
+            });
+        }
     }
 
     private async sendCanvasSync(client: WSClient): Promise<void> {

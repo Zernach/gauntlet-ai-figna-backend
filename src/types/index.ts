@@ -16,25 +16,26 @@ export interface User {
 
 export interface Canvas {
     id: string;
-    ownerId: string;
+    owner_id: string;
     name: string;
     description?: string;
-    isPublic: boolean;
-    isTemplate: boolean;
-    thumbnailUrl?: string;
-    viewportX: number;
-    viewportY: number;
-    viewportZoom: number;
-    backgroundColor: string;
-    gridEnabled: boolean;
-    gridSize: number;
-    snapToGrid: boolean;
+    is_public: boolean;
+    is_template: boolean;
+    thumbnail_url?: string;
+    viewport_x: number;
+    viewport_y: number;
+    viewport_zoom: number;
+    background_color: string;
+    grid_enabled: boolean;
+    grid_size: number;
+    snap_to_grid: boolean;
     width?: number;
     height?: number;
     tags: string[];
-    createdAt: Date;
-    updatedAt: Date;
-    lastAccessedAt?: Date;
+    created_at: Date;
+    updated_at: Date;
+    last_accessed_at?: Date;
+    is_deleted?: boolean;
 }
 
 export type CanvasObjectType =
@@ -155,6 +156,8 @@ export type WSMessageType =
     | 'CANVAS_SYNC'
     | 'CANVAS_SYNC_REQUEST'
     | 'RECONNECT_REQUEST'
+    | 'SWITCH_CANVAS'
+    | 'CANVAS_SWITCHED'
     | 'PING'
     | 'PONG'
     | 'ERROR'
@@ -187,6 +190,7 @@ export interface CreateCanvasRequest {
     name: string;
     description?: string;
     isPublic?: boolean;
+    backgroundColor?: string;
 }
 
 export interface UpdateCanvasRequest {

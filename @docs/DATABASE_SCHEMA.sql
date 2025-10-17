@@ -110,6 +110,7 @@ CREATE TABLE canvas_objects (
     opacity FLOAT DEFAULT 1.0,
     shadow_color VARCHAR(9),
     shadow_strength INTEGER DEFAULT 0,
+    border_radius FLOAT DEFAULT 0,
     text_content TEXT,
     font_size INTEGER,
     font_family VARCHAR(100) DEFAULT 'Inter',

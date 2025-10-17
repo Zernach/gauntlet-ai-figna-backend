@@ -39,11 +39,11 @@ export class CanvasSyncHandler extends BaseHandler {
         const { updates } = message.payload || {};
 
         try {
-            // Extract allowed updates
+            // Extract allowed updates and convert to snake_case for database
             const allowedUpdates: any = {};
             if (updates && typeof updates === 'object') {
                 if (updates.backgroundColor !== undefined) {
-                    allowedUpdates.backgroundColor = updates.backgroundColor;
+                    allowedUpdates.background_color = updates.backgroundColor;
                 }
             }
 

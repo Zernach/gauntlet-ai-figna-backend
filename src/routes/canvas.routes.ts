@@ -9,18 +9,19 @@ const router = Router();
 // Validation schemas
 const createCanvasSchema = Joi.object({
     name: Joi.string().required().max(255),
-    description: Joi.string().optional().max(1000),
+    description: Joi.string().optional().allow('').max(1000),
     isPublic: Joi.boolean().optional().default(false),
+    backgroundColor: Joi.string().optional().allow('').pattern(/^#[0-9A-F]{6}$/i),
 });
 
 const updateCanvasSchema = Joi.object({
     name: Joi.string().optional().max(255),
-    description: Joi.string().optional().max(1000),
+    description: Joi.string().optional().allow('').max(1000),
     isPublic: Joi.boolean().optional(),
     viewportX: Joi.number().optional(),
     viewportY: Joi.number().optional(),
     viewportZoom: Joi.number().optional().min(0.1).max(10),
-    backgroundColor: Joi.string().optional().pattern(/^#[0-9A-F]{6}$/i),
+    backgroundColor: Joi.string().optional().allow('').pattern(/^#[0-9A-F]{6}$/i),
     gridEnabled: Joi.boolean().optional(),
     gridSize: Joi.number().optional().min(1),
     snapToGrid: Joi.boolean().optional(),
@@ -28,7 +29,8 @@ const updateCanvasSchema = Joi.object({
 
 /**
  * GET /api/canvas
- * Get the single global canvas for all users
+ * Get all canvases accessible to the user
+ * If user has no canvases, automatically create a default one
  */
 router.get('/', authenticateUser, async (req: AuthRequest, res: Response) => {
     try {
@@ -36,14 +38,27 @@ router.get('/', authenticateUser, async (req: AuthRequest, res: Response) => {
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
-        const canvas = await CanvasService.getGlobalCanvas(req.user.uid);
+        let canvases = await CanvasService.getUserCanvases(req.user.uid);
+
+        // If user has no canvases, create a default one
+        if (canvases.length === 0) {
+            console.log(`Creating default canvas for user ${req.user.uid}`);
+            const defaultCanvas = await CanvasService.create(req.user.uid, {
+                name: 'My First Canvas',
+                description: 'Welcome to Figna!',
+                backgroundColor: '#1a1a1a',
+                isPublic: false,
+            });
+            canvases = [defaultCanvas];
+        }
 
         return res.json({
             success: true,
-            data: canvas,
+            data: canvases,
+            count: canvases.length,
         });
     } catch (error: any) {
-        console.error('Get canvas error:', error);
+        console.error('Get canvases error:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error.message,
@@ -98,7 +113,7 @@ router.get('/:canvasId', authenticateUser, async (req: AuthRequest, res: Respons
 
 /**
  * POST /api/canvas
- * Canvas creation is disabled - using single global canvas
+ * Create a new canvas
  */
 router.post('/', authenticateUser, async (req: AuthRequest, res: Response) => {
     try {
@@ -106,16 +121,29 @@ router.post('/', authenticateUser, async (req: AuthRequest, res: Response) => {
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
-        // Return the global canvas instead of creating a new one
-        const canvas = await CanvasService.getGlobalCanvas(req.user.uid);
+        // Validate request body
+        const { error, value } = createCanvasSchema.validate(req.body);
+        if (error) {
+            return res.status(400).json({
+                error: 'Validation error',
+                message: error.details[0].message,
+            });
+        }
 
-        return res.status(200).json({
+        const canvas = await CanvasService.create(req.user.uid, {
+            name: value.name,
+            description: value.description,
+            backgroundColor: value.backgroundColor,
+            isPublic: value.isPublic,
+        });
+
+        return res.status(201).json({
             success: true,
             data: canvas,
-            message: 'Using global collaborative canvas',
+            message: 'Canvas created successfully',
         });
     } catch (error: any) {
-        console.error('Get canvas error:', error);
+        console.error('Create canvas error:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error.message,
@@ -178,7 +206,7 @@ router.put('/:canvasId', authenticateUser, async (req: AuthRequest, res: Respons
 
 /**
  * DELETE /api/canvas/:canvasId
- * Canvas deletion is disabled - using single global canvas
+ * Delete a canvas (owner only)
  */
 router.delete('/:canvasId', authenticateUser, async (req: AuthRequest, res: Response) => {
     try {
@@ -186,12 +214,38 @@ router.delete('/:canvasId', authenticateUser, async (req: AuthRequest, res: Resp
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
-        return res.status(403).json({
-            error: 'Forbidden',
-            message: 'Cannot delete the global collaborative canvas',
+        const { canvasId } = req.params;
+
+        const success = await CanvasService.delete(canvasId, req.user.uid);
+
+        if (!success) {
+            return res.status(500).json({
+                error: 'Internal server error',
+                message: 'Failed to delete canvas',
+            });
+        }
+
+        return res.json({
+            success: true,
+            message: 'Canvas deleted successfully',
         });
     } catch (error: any) {
         console.error('Delete canvas error:', error);
+
+        if (error.message === 'Canvas not found') {
+            return res.status(404).json({
+                error: 'Not found',
+                message: error.message,
+            });
+        }
+
+        if (error.message === 'Only the canvas owner can delete it') {
+            return res.status(403).json({
+                error: 'Forbidden',
+                message: error.message,
+            });
+        }
+
         return res.status(500).json({
             error: 'Internal server error',
             message: error.message,

@@ -161,8 +161,9 @@ User: "Create a red circle and a blue circle"
 User: "Design a login screen" or "Create a login form"
 → As a designer, create a beautiful, layered login form with proper visual hierarchy:
 → createShapes({shapes: [
-  // Background container (z: 1)
+  // Background container - LOWEST z-index (form div itself) (z: 1)
   {type: "rectangle", color: "#1A1A1A", width: 480, height: 680, x: 24760, y: 24660, borderRadius: 16, zIndex: 1},
+  // All elements ABOVE the background container (z: 2+)
   // Header with accent bar (z: 2)
   {type: "rectangle", color: "#4A90E2", width: 480, height: 6, x: 24760, y: 24660, borderRadius: 3, zIndex: 2},
   // Title (z: 3)
@@ -171,13 +172,13 @@ User: "Design a login screen" or "Create a login form"
   // Username field (z: 2 for input, z: 3 for label)
   {type: "text", textContent: "Username", color: "#CCCCCC", fontSize: 14, x: 24820, y: 24840, zIndex: 3},
   {type: "rectangle", color: "#2A2A2A", width: 400, height: 48, x: 24800, y: 24865, borderRadius: 8, zIndex: 2},
-  // Password field
+  // Password field (z: 2 for input, z: 3 for label)
   {type: "text", textContent: "Password", color: "#CCCCCC", fontSize: 14, x: 24820, y: 24950, zIndex: 3},
   {type: "rectangle", color: "#2A2A2A", width: 400, height: 48, x: 24800, y: 24975, borderRadius: 8, zIndex: 2},
   // Login button (z: 2 for button, z: 3 for text)
   {type: "rectangle", color: "#4A90E2", width: 400, height: 52, x: 24800, y: 25070, borderRadius: 10, zIndex: 2},
   {type: "text", textContent: "Sign In", color: "#FFFFFF", fontSize: 18, fontWeight: "bold", x: 24965, y: 25088, zIndex: 3},
-  // Footer link
+  // Footer links (z: 3)
   {type: "text", textContent: "Forgot your password?", color: "#4A90E2", fontSize: 14, x: 24880, y: 25160, zIndex: 3},
   {type: "text", textContent: "Create Account", color: "#50C878", fontSize: 14, x: 24905, y: 25195, zIndex: 3}
 ]})

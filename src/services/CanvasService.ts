@@ -66,39 +66,80 @@ export class CanvasService {
     private static shapesCache = new LRUCache<CanvasObject[]>(50, 5000); // 5s TTL for shapes
     private static shapeCache = new LRUCache<CanvasObject>(200, 3000); // 3s TTL for individual shapes
     /**
-     * Get the single global canvas (or create it if it doesn't exist)
+     * Get all canvases accessible to a user (owned + shared)
+     * Ordered by last accessed time (most recent first)
      */
-    static async getGlobalCanvas(userId: string): Promise<Canvas> {
+    static async getUserCanvases(userId: string): Promise<Canvas[]> {
         const client = getDatabaseClient();
 
-        // Try to get existing canvas (the first non-deleted one)
-        const { data: existingCanvas, error: fetchError } = await client
+        // Get canvases where user is owner or collaborator
+        const { data: ownedCanvases, error: ownedError } = await client
             .from('canvases')
             .select('*')
+            .eq('owner_id', userId)
             .eq('is_deleted', false)
-            .limit(1)
-            .single();
+            .order('last_accessed_at', { ascending: false, nullsFirst: false });
 
-        if (existingCanvas) {
-            return existingCanvas as Canvas;
-        }
+        if (ownedError) throw ownedError;
 
-        // If no canvas exists, create the global canvas
+        // TODO: Add collaborator canvases when collaboration feature is implemented
+        // For now, just return owned canvases
+        return (ownedCanvases || []) as Canvas[];
+    }
+
+    /**
+     * Create a new canvas
+     */
+    static async create(userId: string, data: {
+        name: string;
+        description?: string;
+        backgroundColor?: string;
+        isPublic?: boolean;
+    }): Promise<Canvas> {
+        const client = getDatabaseClient();
+
         const { data: newCanvas, error: createError } = await client
             .from('canvases')
             .insert({
                 owner_id: userId,
-                name: 'Global Collaborative Canvas',
-                description: 'A shared canvas for all users to collaborate',
-                is_public: true,
-                // Ensure a non-white default background for the global canvas
-                background_color: '#1c1c1c',
+                name: data.name || 'Untitled Canvas',
+                description: data.description || '',
+                is_public: data.isPublic !== undefined ? data.isPublic : false,
+                background_color: data.backgroundColor || '#1a1a1a',
+                viewport_x: 0,
+                viewport_y: 0,
+                viewport_zoom: 1.0,
+                grid_enabled: false,
+                grid_size: 20,
+                snap_to_grid: false,
+                last_accessed_at: new Date().toISOString(),
             })
             .select()
             .single();
 
         if (createError) throw createError;
         return newCanvas as Canvas;
+    }
+
+    /**
+     * Get or create default canvas for user
+     * Used for initial login to ensure user always has at least one canvas
+     */
+    static async getOrCreateDefaultCanvas(userId: string): Promise<Canvas> {
+        const canvases = await this.getUserCanvases(userId);
+
+        if (canvases.length > 0) {
+            // Return most recently accessed canvas
+            return canvases[0];
+        }
+
+        // Create default canvas for new user
+        return this.create(userId, {
+            name: 'My First Canvas',
+            description: 'Welcome to Figna!',
+            backgroundColor: '#1a1a1a',
+            isPublic: false,
+        });
     }
 
     /**
@@ -134,15 +175,13 @@ export class CanvasService {
 
         const updateData: any = {};
         const allowedFields = [
-            'name', 'description', 'isPublic', 'viewportX', 'viewportY',
-            'viewportZoom', 'backgroundColor', 'gridEnabled', 'gridSize', 'snapToGrid'
+            'name', 'description', 'is_public', 'viewport_x', 'viewport_y',
+            'viewport_zoom', 'background_color', 'grid_enabled', 'grid_size', 'snap_to_grid'
         ];
 
         for (const field of allowedFields) {
             if (data[field as keyof Canvas] !== undefined) {
-                // Convert camelCase to snake_case
-                const snakeField = field.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-                updateData[snakeField] = data[field as keyof Canvas];
+                updateData[field] = data[field as keyof Canvas];
             }
         }
 
@@ -174,13 +213,42 @@ export class CanvasService {
     }
 
     /**
-     * Delete canvas (soft delete) - DISABLED for global canvas
-     * Keeping this for backward compatibility but it won't allow deletion
+     * Delete canvas (soft delete)
+     * Only owner can delete the canvas
      */
     static async delete(canvasId: string, userId: string): Promise<boolean> {
-        // Prevent deletion of the global canvas
-        console.warn('Canvas deletion is disabled - using single global canvas');
-        return false;
+        const client = getDatabaseClient();
+
+        // First check if user is the owner
+        const canvas = await this.findById(canvasId);
+        if (!canvas) {
+            throw new Error('Canvas not found');
+        }
+
+        if (canvas.owner_id !== userId) {
+            throw new Error('Only the canvas owner can delete it');
+        }
+
+        // Soft delete the canvas
+        const { error } = await client
+            .from('canvases')
+            .update({
+                is_deleted: true,
+                updated_at: new Date().toISOString(),
+            })
+            .eq('id', canvasId)
+            .eq('is_deleted', false);
+
+        if (error) {
+            console.error('Error deleting canvas:', error);
+            return false;
+        }
+
+        // Invalidate cache
+        this.canvasCache.invalidate(canvasId);
+        this.shapesCache.invalidate(`shapes:${canvasId}`);
+
+        return true;
     }
 
     /**
@@ -426,21 +494,29 @@ export class CanvasService {
 
     /**
      * Check if user has access to canvas
-     * Since we're using a single global canvas, all authenticated users have access
+     * User has access if they are:
+     * 1. The owner
+     * 2. A collaborator (TODO: implement when collaboration feature is added)
+     * 3. Canvas is public (read-only)
      */
     static async checkAccess(canvasId: string, userId: string): Promise<boolean> {
         const client = getDatabaseClient();
 
         const { data, error } = await client
             .from('canvases')
-            .select('id, is_public')
+            .select('id, owner_id, is_public')
             .eq('id', canvasId)
             .eq('is_deleted', false)
             .single();
 
         if (error || !data) return false;
 
-        // For global canvas, all users have access if it's public
+        // Owner always has access
+        if (data.owner_id === userId) return true;
+
+        // TODO: Check collaborators table when collaboration feature is implemented
+
+        // Public canvases are accessible to all
         return data.is_public === true;
     }
 
