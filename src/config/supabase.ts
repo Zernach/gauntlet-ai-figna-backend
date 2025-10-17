@@ -28,7 +28,6 @@ export function initializeSupabase(): SupabaseClient {
             },
         });
 
-        console.log('✅ Supabase initialized successfully');
         return supabase;
     } catch (error: any) {
         console.error('❌ Supabase initialization failed:', error.message);

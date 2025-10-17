@@ -250,12 +250,10 @@ export class ShapeHandler extends BaseHandler {
             updatedData.lockedAt = new Date();
             updatedData.lockedBy = userId;
             delete updatedData.isLocked;
-            console.log(`🔒 Locking shape for user ${userId}`);
         } else if (updates.isLocked === false) {
             updatedData.lockedAt = null;
             updatedData.lockedBy = null;
             delete updatedData.isLocked;
-            console.log(`🔓 Unlocking shape`);
         }
 
         return updatedData;

@@ -46,7 +46,6 @@ export class ConnectionAuth {
             authenticatedUserId = decodedToken.userId;
         } else if (userId) {
             // Development mode: accept userId directly
-            console.log('⚠️  Development mode: accepting userId without token verification');
             authenticatedUserId = userId;
             validateUserId(userId);
         } else {
@@ -78,16 +77,13 @@ export class ConnectionAuth {
 
         if (token && decodedToken) {
             // Production mode: get or create user from Supabase auth data
-            console.log('🔐 Token authentication - creating/getting user:', userId);
             const supabaseData = {
                 uid: userId,
                 email: decodedToken.email || 'user@example.com',
                 name: decodedToken.user_metadata?.name || decodedToken.user_metadata?.full_name,
                 picture: decodedToken.user_metadata?.avatar_url || decodedToken.user_metadata?.picture,
             };
-            console.log('📝 Supabase data:', supabaseData);
             user = await UserService.getOrCreateFromSupabase(supabaseData);
-            console.log('✅ User created/found:', user?.username);
         } else {
             // Development mode: find or create demo user
             user = await UserService.findBySupabaseId(userId);

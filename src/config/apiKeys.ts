@@ -63,7 +63,6 @@ class APIKeyManager {
             rotationIntervalDays: 90,
         });
 
-        console.log(`🔑 Loaded ${this.keys.size} API keys`);
     }
 
     /**
@@ -144,7 +143,6 @@ class APIKeyManager {
         key.hash = hashValue(newValue);
         key.lastRotated = new Date();
 
-        console.log(`🔄 Rotated API key: ${key.name}`);
         return true;
     }
 

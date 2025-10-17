@@ -58,7 +58,6 @@ export async function testDatabaseConnection(): Promise<boolean> {
             throw error;
         }
 
-        console.log('✅ Database connected successfully');
         return true;
     } catch (error: any) {
         console.error('❌ Database connection failed:', error.message);
@@ -70,7 +69,6 @@ export async function testDatabaseConnection(): Promise<boolean> {
  * Close database connection (Supabase handles this automatically)
  */
 export async function closeDatabaseConnection(): Promise<void> {
-    console.log('✅ Supabase connection closed');
     supabaseClient = null;
 }
 

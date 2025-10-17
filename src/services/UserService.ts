@@ -189,9 +189,7 @@ export class UserService {
                         backgroundColor: '#1a1a1a',
                         isPublic: false,
                     });
-                    console.log(`✅ Created default canvas for new user: ${user.email}`);
                 } catch (canvasError: any) {
-                    console.error('Error creating default canvas for new user:', canvasError);
                     // Don't throw - user creation succeeded, canvas creation is a nice-to-have
                 }
             }

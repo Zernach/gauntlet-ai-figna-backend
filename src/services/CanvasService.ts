@@ -100,10 +100,7 @@ export class CanvasService {
             });
 
         if (userError) {
-            console.error('Error creating system user:', userError);
             // Don't throw - system user might already exist (race condition)
-        } else {
-            console.log('✅ Created system user');
         }
     }
 
@@ -151,11 +148,9 @@ export class CanvasService {
             .single();
 
         if (createError) {
-            console.error('Error creating public canvas:', createError);
             throw createError;
         }
 
-        console.log('✅ Created public canvas');
         return newCanvas as Canvas;
     }
 
@@ -344,7 +339,6 @@ export class CanvasService {
             .eq('is_deleted', false);
 
         if (error) {
-            console.error('Error deleting canvas:', error);
             return false;
         }
 
@@ -673,7 +667,6 @@ export class CanvasService {
             .select();
 
         if (error) {
-            console.error('Error auto-unlocking shapes:', error);
             return 0;
         }
 
@@ -722,7 +715,6 @@ export class CanvasService {
             .select();
 
         if (error) {
-            console.error('Error unlocking shapes by user:', error);
             return [];
         }
 

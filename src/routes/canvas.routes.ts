@@ -42,7 +42,6 @@ router.get('/', authenticateUser, async (req: AuthRequest, res: Response) => {
 
         // If user has no canvases, create a default one
         if (canvases.length === 0) {
-            console.log(`Creating default canvas for user ${req.user.uid}`);
             const defaultCanvas = await CanvasService.create(req.user.uid, {
                 name: 'My First Canvas',
                 description: 'Welcome to Figna!',
@@ -58,7 +57,6 @@ router.get('/', authenticateUser, async (req: AuthRequest, res: Response) => {
             count: canvases.length,
         });
     } catch (error: any) {
-        console.error('Get canvases error:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error.message,
@@ -103,7 +101,6 @@ router.get('/:canvasId', authenticateUser, async (req: AuthRequest, res: Respons
             data: canvas,
         });
     } catch (error: any) {
-        console.error('Get canvas error:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error.message,
@@ -143,7 +140,6 @@ router.post('/', authenticateUser, async (req: AuthRequest, res: Response) => {
             message: 'Canvas created successfully',
         });
     } catch (error: any) {
-        console.error('Create canvas error:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error.message,
@@ -188,8 +184,6 @@ router.put('/:canvasId', authenticateUser, async (req: AuthRequest, res: Respons
             data: canvas,
         });
     } catch (error: any) {
-        console.error('Update canvas error:', error);
-
         if (error.message === 'Canvas not found') {
             return res.status(404).json({
                 error: 'Not found',
@@ -230,8 +224,6 @@ router.delete('/:canvasId', authenticateUser, async (req: AuthRequest, res: Resp
             message: 'Canvas deleted successfully',
         });
     } catch (error: any) {
-        console.error('Delete canvas error:', error);
-
         if (error.message === 'Canvas not found') {
             return res.status(404).json({
                 error: 'Not found',
@@ -289,7 +281,6 @@ router.get('/:canvasId/shapes', authenticateUser, async (req: AuthRequest, res: 
             count: shapes.length,
         });
     } catch (error: any) {
-        console.error('Get shapes error:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error.message,
@@ -352,7 +343,6 @@ router.get('/:canvasId/sync', authenticateUser, async (req: AuthRequest, res: Re
             timestamp: Date.now(),
         });
     } catch (error: any) {
-        console.error('Sync canvas error:', error);
         return res.status(500).json({
             error: 'Internal server error',
             message: error.message,

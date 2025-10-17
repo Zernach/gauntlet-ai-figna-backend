@@ -20,7 +20,6 @@ router.post('/relay', enhancedAuthenticateUser, async (req: AuthRequest, res: Re
     try {
         // Get API key securely from key manager
         if (!hasAPIKey('openai')) {
-            console.error('❌ OpenAI API key not configured');
             res.status(503).json({
                 error: 'Service Unavailable',
                 message: 'Voice features are not configured',
@@ -29,8 +28,6 @@ router.post('/relay', enhancedAuthenticateUser, async (req: AuthRequest, res: Re
         }
 
         const OPENAI_API_KEY = getAPIKey('openai');
-
-        console.log('🎤 [Voice Relay] Requesting OpenAI relay session...');
 
         // Call OpenAI to generate a relay session
         const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
@@ -183,6 +180,46 @@ User: "Design a login screen" or "Create a login form"
   {type: "text", textContent: "Create Account", color: "#50C878", fontSize: 14, x: 24905, y: 25195, zIndex: 3}
 ]})
 → "I've designed a beautiful login screen with a modern dark theme, rounded corners, and proper visual hierarchy. The form includes username and password fields, a sign-in button, and helpful links."
+
+User: "Design a registration form" or "Create a sign up form"
+→ As a designer, create a comprehensive registration form with all necessary fields and proper visual hierarchy:
+→ createShapes({shapes: [
+  // Background container - LOWEST z-index (form div itself) (z: 1)
+  {type: "rectangle", color: "#1A1A1A", width: 520, height: 1080, x: 24740, y: 24460, borderRadius: 16, zIndex: 1},
+  // Header with accent bar (z: 2)
+  {type: "rectangle", color: "#50C878", width: 520, height: 6, x: 24740, y: 24460, borderRadius: 3, zIndex: 2},
+  // Title (z: 3)
+  {type: "text", textContent: "Create Account", color: "#FFFFFF", fontSize: 36, fontWeight: "bold", x: 24800, y: 24510, zIndex: 3},
+  {type: "text", textContent: "Join us today", color: "#999999", fontSize: 16, x: 24800, y: 24560, zIndex: 3},
+  // Phone Number field (z: 2 for input, z: 3 for label)
+  {type: "text", textContent: "Phone Number", color: "#CCCCCC", fontSize: 14, x: 24800, y: 24620, zIndex: 3},
+  {type: "rectangle", color: "#2A2A2A", width: 440, height: 48, x: 24780, y: 24645, borderRadius: 8, zIndex: 2},
+  // Home Address field (z: 2 for input, z: 3 for label)
+  {type: "text", textContent: "Home Address", color: "#CCCCCC", fontSize: 14, x: 24800, y: 24720, zIndex: 3},
+  {type: "rectangle", color: "#2A2A2A", width: 440, height: 48, x: 24780, y: 24745, borderRadius: 8, zIndex: 2},
+  // City field (z: 2 for input, z: 3 for label)
+  {type: "text", textContent: "City", color: "#CCCCCC", fontSize: 14, x: 24800, y: 24820, zIndex: 3},
+  {type: "rectangle", color: "#2A2A2A", width: 440, height: 48, x: 24780, y: 24845, borderRadius: 8, zIndex: 2},
+  // State field (z: 2 for input, z: 3 for label)
+  {type: "text", textContent: "State", color: "#CCCCCC", fontSize: 14, x: 24800, y: 24920, zIndex: 3},
+  {type: "rectangle", color: "#2A2A2A", width: 210, height: 48, x: 24780, y: 24945, borderRadius: 8, zIndex: 2},
+  // Zip Code field (z: 2 for input, z: 3 for label)
+  {type: "text", textContent: "Zip Code", color: "#CCCCCC", fontSize: 14, x: 25020, y: 24920, zIndex: 3},
+  {type: "rectangle", color: "#2A2A2A", width: 200, height: 48, x: 25010, y: 24945, borderRadius: 8, zIndex: 2},
+  // Terms and Conditions toggle switch (z: 2-3)
+  {type: "text", textContent: "I agree to the Terms and Conditions", color: "#CCCCCC", fontSize: 14, x: 24860, y: 25030, zIndex: 3},
+  // Toggle switch background (off state)
+  {type: "rectangle", color: "#3A3A3A", width: 56, height: 28, x: 24780, y: 25025, borderRadius: 14, zIndex: 2},
+  // Toggle switch knob (off position)
+  {type: "circle", color: "#FFFFFF", radius: 11, x: 24803, y: 25039, zIndex: 3},
+  // Sign Up button (z: 2 for button, z: 3 for text)
+  {type: "rectangle", color: "#50C878", width: 440, height: 52, x: 24780, y: 25090, borderRadius: 10, zIndex: 2},
+  {type: "text", textContent: "Sign Up", color: "#FFFFFF", fontSize: 18, fontWeight: "bold", x: 24957, y: 25108, zIndex: 3},
+  // Footer text (z: 3)
+  {type: "text", textContent: "Already have an account?", color: "#999999", fontSize: 14, x: 24890, y: 25180, zIndex: 3},
+  {type: "text", textContent: "Sign In", color: "#4A90E2", fontSize: 14, x: 24950, y: 25205, zIndex: 3}
+]})
+→ "I've designed a comprehensive registration form with a modern dark theme. The form includes fields for phone number, home address, city, state, and zip code, along with a toggle switch to agree to terms and conditions and a prominent sign-up button. The design uses proper spacing and visual hierarchy for a clean, professional look."
 
 User: "Design a hero section for a website"
 → Think like a designer - create an impactful hero with background, headline, subtext, and call-to-action:
@@ -362,7 +399,6 @@ Remember: You're not just placing shapes - you're crafting beautiful user experi
 
         if (!response.ok) {
             const errorData = await response.text();
-            console.error('❌ [Voice Relay] OpenAI API error:', errorData);
             securityLogger.logFromRequest(
                 req,
                 SecurityEventType.SUSPICIOUS_ACTIVITY,
@@ -383,13 +419,8 @@ Remember: You're not just placing shapes - you're crafting beautiful user experi
             sessionId: data.id,
             expiresAt: data.client_secret?.expires_at || data.expires_at,
         }
-        console.log('✅ [Voice Relay] Session created successfully:', {
-            sessionId: returned.sessionId,
-            expiresAt: returned.expiresAt ? new Date(returned.expiresAt * 1000).toISOString() : 'N/A'
-        });
         res.json(returned);
     } catch (error) {
-        console.error('❌ [Voice Relay] Error generating voice relay URL:', error);
         securityLogger.logFromRequest(
             req,
             SecurityEventType.SUSPICIOUS_ACTIVITY,

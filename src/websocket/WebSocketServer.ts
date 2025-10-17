@@ -30,6 +30,9 @@ export class WebSocketServer {
     private readonly CURSOR_THROTTLE_MS = 25; // 40fps for cursors
     private readonly SHAPE_THROTTLE_MS = 33; // 30fps for shape updates
 
+    // Track last cursor activity per user for lock extension
+    private lastCursorActivity: Map<string, number> = new Map(); // userId -> timestamp
+
     constructor(server: HTTPServer) {
         this.wss = new WSServer({
             server,
@@ -43,8 +46,6 @@ export class WebSocketServer {
     }
 
     private initialize(): void {
-        console.log(`🔌 WebSocket server initialized on path /ws`);
-
         this.wss.on('connection', this.handleConnection.bind(this));
         this.startHeartbeat();
         this.startAutoUnlock();
@@ -124,7 +125,6 @@ export class WebSocketServer {
     private async handleConnection(ws: WebSocket, req: IncomingMessage): Promise<void> {
         const connectionId = uuidv4();
         const clientIP = getClientIP(req as any);
-        console.log(`🔗 New WebSocket connection: ${connectionId} from ${clientIP}`);
 
         try {
             // Parse query parameters
@@ -219,7 +219,6 @@ export class WebSocketServer {
             }
 
             // Get or create user info
-            console.log('🔐 Token authentication - creating/getting user:', authenticatedUserId);
             const supabaseData = {
                 uid: authenticatedUserId,
                 email: decodedToken.email || 'user@example.com',
@@ -230,9 +229,7 @@ export class WebSocketServer {
                 picture: decodedToken.user_metadata?.avatar_url ||
                     decodedToken.user_metadata?.picture,
             };
-            console.log('📝 Supabase data:', supabaseData);
             const user = await UserService.getOrCreateFromSupabase(supabaseData);
-            console.log('✅ User created/found:', user?.username);
 
             // Create client
             const client: WSClient = {
@@ -292,10 +289,7 @@ export class WebSocketServer {
                 clientIP,
                 { canvasId, username: user.username }
             );
-
-            console.log(`✅ User ${user.username} connected to canvas ${canvasId}`);
         } catch (error: any) {
-            console.error('Connection error:', error);
             securityLogger.logWSConnection(
                 SecurityEventType.WS_CONNECTION_FAILURE,
                 'Connection error',
@@ -317,8 +311,6 @@ export class WebSocketServer {
             message.userId = client.userId;
             message.canvasId = client.canvasId;
             message.timestamp = Date.now();
-
-            console.log(`📨 Message from ${client.user?.username}:`, message.type);
 
             switch (message.type) {
                 case 'PING':
@@ -359,7 +351,6 @@ export class WebSocketServer {
 
                 case 'RECONNECT_REQUEST':
                     // Handle reconnection with full state sync
-                    console.log(`🔄 Reconnection requested by ${client.user?.username}`);
                     await this.sendCanvasSync(client);
                     break;
 
@@ -368,10 +359,10 @@ export class WebSocketServer {
                     break;
 
                 default:
-                    console.warn(`Unknown message type: ${message.type}`);
+                    // Unknown message type
+                    break;
             }
         } catch (error: any) {
-            console.error('Message handling error:', error);
             this.sendError(client.socket, error.message);
         }
     }
@@ -386,6 +377,9 @@ export class WebSocketServer {
             return; // Skip this update due to throttling
         }
         this.cursorUpdateThrottles.set(client.id, now);
+
+        // Track cursor activity for this user (for lock extension)
+        this.lastCursorActivity.set(client.userId, now);
 
         // Ensure user has a color assigned
         const userColor = client.user?.avatarColor || this.assignNeonColor(client.userId);
@@ -417,7 +411,9 @@ export class WebSocketServer {
             viewportZoom,
             color: userColor,
             connectionId: client.id,
-        }).catch(err => console.error('Presence update error:', err));
+        }).catch(err => {
+            // Presence update error handled silently
+        });
     }
 
     private async handleShapeCreate(client: WSClient, message: WSMessage): Promise<void> {
@@ -436,7 +432,6 @@ export class WebSocketServer {
                 timestamp: Date.now(),
             }, undefined, 'high');
         } catch (error) {
-            console.error('Shape create error:', error);
             this.sendError(client.socket, 'Failed to create shape');
         }
     }
@@ -477,7 +472,6 @@ export class WebSocketServer {
             updatedData.lockedAt = new Date();
             updatedData.lockedBy = client.userId;
             delete updatedData.isLocked;
-            console.log(`🔒 Locking shape ${shapeId} for user ${client.userId}`);
         } else if (updates.isLocked === false) {
             // Only allow unlock by the lock owner; if not owner, ignore
             if (currentShape) {
@@ -500,7 +494,6 @@ export class WebSocketServer {
             updatedData.lockedAt = null;
             updatedData.lockedBy = null;
             delete updatedData.isLocked;
-            console.log(`🔓 Unlocking shape ${shapeId}`);
         }
 
         try {
@@ -535,7 +528,6 @@ export class WebSocketServer {
                 }, undefined, isLockUpdate ? 'high' : 'low');
             }
         } catch (error) {
-            console.error('Shape update error:', error);
             this.sendError(client.socket, 'Failed to update shape');
         }
     }
@@ -554,7 +546,6 @@ export class WebSocketServer {
                 timestamp: Date.now(),
             }, undefined, 'high');
         } catch (error) {
-            console.error('Shape delete error:', error);
             this.sendError(client.socket, 'Failed to delete shape');
         }
     }
@@ -573,7 +564,6 @@ export class WebSocketServer {
                 timestamp: Date.now(),
             });
         } catch (error) {
-            console.error('Batch update error:', error);
             this.sendError(client.socket, 'Failed to batch update shapes');
         }
     }
@@ -626,7 +616,7 @@ export class WebSocketServer {
                 payload: { activeUsers: payload },
             });
         } catch (error) {
-            console.error('Failed to broadcast active users:', error);
+            // Error broadcasting active users handled silently
         }
     }
 
@@ -674,7 +664,6 @@ export class WebSocketServer {
         }
 
         const oldCanvasId = client.canvasId;
-        console.log(`🔄 User ${client.user?.username} switching canvas: ${oldCanvasId} -> ${newCanvasId}`);
 
         try {
             // 1. Remove presence from old canvas
@@ -738,10 +727,7 @@ export class WebSocketServer {
                 type: 'CANVAS_SWITCHED',
                 payload: { canvasId: newCanvasId, success: true },
             });
-
-            console.log(`✅ User ${client.user?.username} successfully switched to canvas ${newCanvasId}`);
         } catch (error: any) {
-            console.error('Canvas switch error:', error);
             this.sendError(client.socket, 'Failed to switch canvas');
             this.sendToClient(client.id, {
                 type: 'CANVAS_SWITCHED',
@@ -779,7 +765,6 @@ export class WebSocketServer {
                 },
             });
         } catch (error: any) {
-            console.error('Canvas sync error:', error);
             this.sendError(client.socket, 'Failed to sync canvas state');
         }
     }
@@ -804,8 +789,6 @@ export class WebSocketServer {
         const client = this.clients.get(connectionId);
         if (!client) return;
 
-        console.log(`🔌 User ${client.user?.username} disconnected`);
-
         // Clean up performance tracking for this client
         this.cursorUpdateThrottles.delete(connectionId);
         this.messageBatchQueues.delete(connectionId);
@@ -820,9 +803,11 @@ export class WebSocketServer {
         if (!hasOtherConnections) {
             await UserService.updateOnlineStatus(client.userId, false);
 
+            // Clean up cursor activity tracking for this user
+            this.lastCursorActivity.delete(client.userId);
+
             // Unlock all shapes locked by this user
             const unlockedShapes = await CanvasService.unlockShapesByUser(client.userId, client.canvasId);
-            console.log(`🔓 Auto-unlocked ${unlockedShapes.length} shape(s) on user disconnect`);
 
             // Broadcast unlock notifications for each shape
             for (const shape of unlockedShapes) {
@@ -857,7 +842,7 @@ export class WebSocketServer {
     }
 
     private handleError(connectionId: string, error: Error): void {
-        console.error(`WebSocket error for ${connectionId}:`, error);
+        // WebSocket error handled silently
     }
 
     private handlePong(connectionId: string): void {
@@ -928,7 +913,6 @@ export class WebSocketServer {
         this.heartbeatInterval = setInterval(async () => {
             this.clients.forEach((client, connectionId) => {
                 if (!client.isAlive) {
-                    console.log(`💔 Terminating inactive connection: ${connectionId}`);
                     client.socket.terminate();
                     this.handleDisconnect(connectionId);
                     return;
@@ -949,7 +933,7 @@ export class WebSocketServer {
                     }
                 }
             } catch (e) {
-                console.error(e);
+                // Error during heartbeat handled silently
             }
         }, interval);
     }
@@ -963,35 +947,55 @@ export class WebSocketServer {
                 activeCanvases.add(client.canvasId);
             });
 
+            const now = Date.now();
+
             // Check and unlock expired shapes for each canvas
             for (const canvasId of activeCanvases) {
                 try {
                     const expiredShapes = await CanvasService.getExpiredLocks(canvasId);
 
                     if (expiredShapes.length > 0) {
-                        // Auto-unlock the shapes
-                        await CanvasService.autoUnlockExpiredShapes(canvasId);
+                        // Filter shapes to only unlock those where the user has been inactive
+                        // (no cursor movement) for at least 5 seconds
+                        const shapesToUnlock = expiredShapes.filter((shape: any) => {
+                            const lockedBy = shape.lockedBy || shape.locked_by;
+                            if (!lockedBy) return true; // No lock owner, should unlock
 
-                        // Broadcast unlock notifications for each shape
-                        for (const shape of expiredShapes) {
-                            this.broadcastToCanvas(canvasId, {
-                                type: 'SHAPE_UPDATE',
-                                payload: {
-                                    shape: {
-                                        ...shape,
-                                        locked_at: null,
-                                        locked_by: null,
-                                    }
-                                },
-                            });
+                            const lastActivity = this.lastCursorActivity.get(lockedBy);
+                            if (!lastActivity) return true; // No cursor activity recorded, should unlock
+
+                            const timeSinceActivity = now - lastActivity;
+                            // Only unlock if user has been inactive for >= 5 seconds
+                            return timeSinceActivity >= 5000;
+                        });
+
+                        // Auto-unlock the filtered shapes
+                        if (shapesToUnlock.length > 0) {
+                            for (const shape of shapesToUnlock) {
+                                // Use the shape's locked_by user as the userId for the update
+                                const userId = (shape as any).lockedBy || (shape as any).locked_by || 'system';
+                                await CanvasService.updateShape(shape.id as string, userId, {
+                                    lockedAt: null,
+                                    lockedBy: null,
+                                });
+
+                                // Broadcast unlock notification
+                                this.broadcastToCanvas(canvasId, {
+                                    type: 'SHAPE_UPDATE',
+                                    payload: {
+                                        shape: {
+                                            ...shape,
+                                            locked_at: null,
+                                            locked_by: null,
+                                        }
+                                    },
+                                });
+                            }
                         }
-
-                        console.log(`🔓 Auto-unlocked ${expiredShapes.length} shape(s) in canvas ${canvasId}`);
+                    } catch (error) {
+                        // Error checking expired locks handled silently
                     }
-                } catch (error) {
-                    console.error(`Error checking expired locks for canvas ${canvasId}:`, error);
                 }
-            }
         }, 1000); // Check every 1 second for faster response
     }
 
@@ -1016,7 +1020,7 @@ export class WebSocketServer {
         });
 
         this.wss.close(() => {
-            console.log('✅ WebSocket server closed');
+            // Server closed
         });
     }
 

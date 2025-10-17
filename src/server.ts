@@ -45,7 +45,6 @@ app.use(cors({
             if (corsOrigins.includes(origin)) {
                 callback(null, true);
             } else {
-                console.warn(`⚠️  CORS blocked request from origin: ${origin}`);
                 callback(new Error(`Origin ${origin} not allowed by CORS`));
             }
         } else {
@@ -60,8 +59,6 @@ app.use(cors({
     preflightContinue: false,
     optionsSuccessStatus: 204,
 }));
-
-console.log('🔒 CORS configuration:', Array.isArray(corsOrigins) ? `Allowed origins: ${corsOrigins.join(', ')}` : 'All origins allowed');
 
 app.use(compression() as any);
 app.use(express.json({ limit: '10mb' }));
@@ -104,11 +101,8 @@ app.use(errorHandler);
 
 // Graceful shutdown handler
 async function gracefulShutdown(signal: string): Promise<void> {
-    console.log(`\n${signal} received. Starting graceful shutdown...`);
-
     // Close WebSocket server
     if (wsServer) {
-        console.log('Closing WebSocket server...');
         wsServer.close();
     }
 
@@ -116,7 +110,6 @@ async function gracefulShutdown(signal: string): Promise<void> {
     await closeDatabaseConnection();
 
     // Exit process
-    console.log('✅ Graceful shutdown complete');
     process.exit(0);
 }
 
@@ -126,34 +119,27 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Unhandled rejection handler
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
     process.exit(1);
 });
 
 // Uncaught exception handler
 process.on('uncaughtException', (error) => {
-    console.error('❌ Uncaught Exception:', error);
     process.exit(1);
 });
 
 // Start server
 async function startServer(): Promise<void> {
     try {
-        console.log('🚀 Starting Figna Backend Server...\n');
-
         // Initialize Supabase
-        console.log('🔥 Initializing Supabase...');
         try {
             initializeSupabase();
         } catch (error) {
-            console.warn('⚠️ Supabase initialization failed (continuing without auth)');
+            // Supabase initialization failed
         }
 
         // Test database connection
-        console.log('🗄️  Testing database connection...');
         const dbConnected = await testDatabaseConnection();
         if (!dbConnected) {
-            console.error('❌ Database connection failed. Exiting...');
             process.exit(1);
         }
 
@@ -162,33 +148,13 @@ async function startServer(): Promise<void> {
 
         // Start HTTP server
         httpServer.listen(PORT, HOST, () => {
-            console.log(`\n✅ HTTP Server running on http://${HOST}:${PORT}`);
-            console.log(`📡 API Base URL: http://${HOST}:${PORT}/api`);
-            console.log(`❤️  Health Check: http://${HOST}:${PORT}/api/health\n`);
+            // Server started
         });
 
         // Attach WebSocket server to HTTP server
-        console.log('🔌 Attaching WebSocket server...');
         wsServer = new WebSocketServer(httpServer);
-        console.log(`✅ WebSocket Server attached on ws://${HOST}:${PORT}/ws\n`);
-
-        console.log('='.repeat(60));
-        console.log('🎨 Figna Backend - Ready for Connections!');
-        console.log('='.repeat(60));
-        console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-        console.log(`HTTP/WS Port: ${PORT}`);
-        console.log('='.repeat(60));
-        console.log('\n📚 Available Endpoints:');
-        console.log('  GET    /api           - API info');
-        console.log('  GET    /api/health    - Health check');
-        console.log('  GET    /api/auth/me   - Get current user');
-        console.log('  POST   /api/canvas    - Create canvas');
-        console.log('  GET    /api/canvas    - List canvases');
-        console.log('  WS     ws://host/ws   - WebSocket connection');
-        console.log('='.repeat(60) + '\n');
 
     } catch (error: any) {
-        console.error('❌ Failed to start server:', error.message);
         process.exit(1);
     }
 }
