@@ -992,10 +992,11 @@ export class WebSocketServer {
                                 });
                             }
                         }
-                    } catch (error) {
-                        // Error checking expired locks handled silently
                     }
+                } catch (error) {
+                    // Error checking expired locks handled silently
                 }
+            }
         }, 1000); // Check every 1 second for faster response
     }
 
