@@ -533,20 +533,28 @@ export class WebSocketServer {
     }
 
     private async handleShapeDelete(client: WSClient, message: WSMessage): Promise<void> {
-        const { shapeId } = message.payload;
+        const { shapeId, shapeIds } = message.payload;
+
+        // Support both single shapeId (legacy) and shapeIds array
+        const idsToDelete = shapeIds || (shapeId ? [shapeId] : []);
+
+        if (!idsToDelete || idsToDelete.length === 0) {
+            this.sendError(client.socket, 'Shape ID(s) required');
+            return;
+        }
 
         try {
-            await CanvasService.deleteShape(shapeId);
+            await CanvasService.deleteShapes(idsToDelete);
 
             // Broadcast to all users including sender with high priority (immediate)
             this.broadcastToCanvasBatched(client.canvasId, {
                 type: 'SHAPE_DELETE',
-                payload: { shapeId },
+                payload: { shapeIds: idsToDelete },
                 userId: client.userId,
                 timestamp: Date.now(),
             }, undefined, 'high');
         } catch (error) {
-            this.sendError(client.socket, 'Failed to delete shape');
+            this.sendError(client.socket, 'Failed to delete shape(s)');
         }
     }
 

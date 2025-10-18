@@ -28,7 +28,7 @@ class APIKeyManager {
      * Load API keys from environment variables
      */
     private loadKeys(): void {
-        // OpenAI API Key
+        // OpenAI API Key - check both custom and standard env vars
         const openaiKey = process.env.GAUNTLET_OPEN_AI_API_KEY_1;
         if (openaiKey) {
             this.keys.set('openai', {

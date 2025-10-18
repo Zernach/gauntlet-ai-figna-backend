@@ -314,7 +314,6 @@ gauntlet-ai-backend/
    const ws = new WebSocket('ws://localhost:3002?token=YOUR_TOKEN&canvasId=TEST_ID');
    
    ws.onopen = () => {
-     console.log('Connected');
      ws.send(JSON.stringify({ type: 'PING' }));
    };
    

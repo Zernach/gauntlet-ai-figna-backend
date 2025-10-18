@@ -42,6 +42,8 @@ export class HandlerRegistry {
         this.handlers.set('SHAPE_UPDATE', this.shapeHandler);
         this.handlers.set('SHAPE_DELETE', this.shapeHandler);
         this.handlers.set('SHAPES_BATCH_UPDATE', this.shapeHandler);
+        this.handlers.set('GROUP_SHAPES', this.shapeHandler);
+        this.handlers.set('UNGROUP_SHAPES', this.shapeHandler);
 
         // Presence
         this.handlers.set('PRESENCE_UPDATE', this.presenceHandler);

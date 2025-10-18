@@ -548,27 +548,36 @@ export class CanvasService {
     }
 
     /**
-     * Delete shape (soft delete)
+     * Delete shapes (soft delete)
      */
-    static async deleteShape(shapeId: string): Promise<boolean> {
-        // Get shape first to invalidate canvas cache
-        const shape = await this.getShapeById(shapeId);
+    static async deleteShapes(shapeIds: string[]): Promise<boolean> {
+        if (!shapeIds || shapeIds.length === 0) {
+            return true; // Nothing to delete
+        }
 
         const client = getDatabaseClient();
+
+        // Get shapes first to invalidate canvas cache
+        const canvasIds = new Set<string>();
+        for (const shapeId of shapeIds) {
+            const shape = await this.getShapeById(shapeId);
+            if (shape && (shape as any).canvas_id) {
+                canvasIds.add((shape as any).canvas_id);
+            }
+        }
+
         const { error } = await client
             .from('canvas_objects')
             .update({
                 is_deleted: true,
                 updated_at: new Date().toISOString(),
             })
-            .eq('id', shapeId)
+            .in('id', shapeIds)
             .eq('is_deleted', false);
 
         // Invalidate caches
-        this.shapeCache.invalidate(shapeId);
-        if (shape && (shape as any).canvas_id) {
-            this.shapesCache.invalidate(`shapes:${(shape as any).canvas_id}`);
-        }
+        shapeIds.forEach(shapeId => this.shapeCache.invalidate(shapeId));
+        canvasIds.forEach(canvasId => this.shapesCache.invalidate(`shapes:${canvasId}`));
 
         return !error;
     }
@@ -716,6 +725,151 @@ export class CanvasService {
 
         if (error) {
             return [];
+        }
+
+        return (data || []) as CanvasObject[];
+    }
+
+    /**
+     * Group multiple shapes together
+     * Assigns a unique group_id to all specified shapes
+     * @param shapeIds Array of shape IDs to group
+     * @param userId User performing the operation
+     * @returns Array of updated shapes with group_id assigned
+     */
+    static async groupShapes(shapeIds: string[], userId: string): Promise<CanvasObject[]> {
+        if (!shapeIds || shapeIds.length < 2) {
+            throw new Error('At least 2 shapes are required to create a group');
+        }
+
+        const client = getDatabaseClient();
+
+        // Generate a unique group ID (UUID)
+        const { v4: uuidv4 } = require('uuid');
+        const groupId = uuidv4();
+
+        // Update all shapes with the new group_id
+        const { data, error } = await client
+            .from('canvas_objects')
+            .update({
+                group_id: groupId,
+                last_modified_by: userId,
+                updated_at: new Date().toISOString(),
+            })
+            .in('id', shapeIds)
+            .eq('is_deleted', false)
+            .select();
+
+        if (error) {
+            throw new Error(`Failed to group shapes: ${error.message}`);
+        }
+
+        if (!data || data.length === 0) {
+            throw new Error('No shapes found to group');
+        }
+
+        // Invalidate caches for these shapes and their canvas
+        data.forEach((shape: any) => {
+            this.shapeCache.invalidate(shape.id);
+            if (shape.canvas_id) {
+                this.shapesCache.invalidate(`shapes:${shape.canvas_id}`);
+            }
+        });
+
+        return data as CanvasObject[];
+    }
+
+    /**
+     * Ungroup shapes by removing their group_id
+     * @param shapeIds Array of shape IDs to ungroup
+     * @param userId User performing the operation
+     * @returns Array of updated shapes with group_id removed
+     */
+    static async ungroupShapes(shapeIds: string[], userId: string): Promise<CanvasObject[]> {
+        if (!shapeIds || shapeIds.length === 0) {
+            throw new Error('At least 1 shape is required to ungroup');
+        }
+
+        const client = getDatabaseClient();
+
+        // Get the group IDs of these shapes first
+        const { data: shapesData } = await client
+            .from('canvas_objects')
+            .select('id, group_id, canvas_id')
+            .in('id', shapeIds)
+            .eq('is_deleted', false);
+
+        if (!shapesData || shapesData.length === 0) {
+            throw new Error('No shapes found to ungroup');
+        }
+
+        // Get unique group IDs
+        const groupIds = [...new Set(shapesData.map((s: any) => s.group_id).filter(Boolean))];
+
+        if (groupIds.length === 0) {
+            throw new Error('Selected shapes are not part of any group');
+        }
+
+        // For each group, ungroup ALL shapes in that group (not just selected ones)
+        const allShapesToUngroup: string[] = [];
+        for (const groupId of groupIds) {
+            const { data: groupShapes } = await client
+                .from('canvas_objects')
+                .select('id')
+                .eq('group_id', groupId)
+                .eq('is_deleted', false);
+
+            if (groupShapes) {
+                allShapesToUngroup.push(...groupShapes.map((s: any) => s.id));
+            }
+        }
+
+        // Remove group_id from all shapes in the group(s)
+        const { data, error } = await client
+            .from('canvas_objects')
+            .update({
+                group_id: null,
+                last_modified_by: userId,
+                updated_at: new Date().toISOString(),
+            })
+            .in('id', allShapesToUngroup)
+            .eq('is_deleted', false)
+            .select();
+
+        if (error) {
+            throw new Error(`Failed to ungroup shapes: ${error.message}`);
+        }
+
+        // Invalidate caches
+        if (data) {
+            data.forEach((shape: any) => {
+                this.shapeCache.invalidate(shape.id);
+                if (shape.canvas_id) {
+                    this.shapesCache.invalidate(`shapes:${shape.canvas_id}`);
+                }
+            });
+        }
+
+        return (data || []) as CanvasObject[];
+    }
+
+    /**
+     * Get all shapes that belong to a specific group
+     * @param groupId Group ID to query
+     * @returns Array of shapes in the group
+     */
+    static async getGroupShapes(groupId: string): Promise<CanvasObject[]> {
+        const client = getDatabaseClient();
+
+        const { data, error } = await client
+            .from('canvas_objects')
+            .select('*')
+            .eq('group_id', groupId)
+            .eq('is_deleted', false)
+            .order('z_index', { ascending: true });
+
+        if (error) {
+            throw new Error(`Failed to get group shapes: ${error.message}`);
         }
 
         return (data || []) as CanvasObject[];

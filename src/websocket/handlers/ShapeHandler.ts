@@ -127,27 +127,30 @@ export class ShapeHandler extends BaseHandler {
      * Handle shape deletion
      */
     async handleDelete(client: WSClient, message: WSMessage, context: HandlerContext): Promise<void> {
-        const { shapeId } = message.payload;
+        const { shapeId, shapeIds } = message.payload;
 
-        if (!shapeId) {
-            this.sendError(client, 'Shape ID is required');
+        // Support both single shapeId (legacy) and shapeIds array
+        const idsToDelete = shapeIds || (shapeId ? [shapeId] : []);
+
+        if (!idsToDelete || idsToDelete.length === 0) {
+            this.sendError(client, 'Shape ID(s) required');
             return;
         }
 
         try {
-            await CanvasService.deleteShape(shapeId);
+            await CanvasService.deleteShapes(idsToDelete);
 
             // Broadcast to all users including sender with high priority (immediate)
             context.broadcastToCanvasBatched(client.canvasId, {
                 type: 'SHAPE_DELETE',
-                payload: { shapeId },
+                payload: { shapeIds: idsToDelete },
                 userId: client.userId,
                 timestamp: Date.now(),
             }, undefined, 'high');
 
         } catch (error) {
             console.error('Shape delete error:', error);
-            this.sendError(client, 'Failed to delete shape');
+            this.sendError(client, 'Failed to delete shape(s)');
         }
     }
 
@@ -178,6 +181,66 @@ export class ShapeHandler extends BaseHandler {
         }
     }
 
+    /**
+     * Handle grouping multiple shapes together
+     */
+    async handleGroupShapes(client: WSClient, message: WSMessage, context: HandlerContext): Promise<void> {
+        const { shapeIds } = message.payload;
+
+        if (!Array.isArray(shapeIds) || shapeIds.length < 2) {
+            this.sendError(client, 'At least 2 shape IDs are required to create a group');
+            return;
+        }
+
+        try {
+            // Group the shapes
+            const groupedShapes = await CanvasService.groupShapes(shapeIds, client.userId);
+
+            // Broadcast the grouped shapes to all users
+            context.broadcastToCanvasBatched(client.canvasId, {
+                type: 'SHAPES_GROUPED',
+                payload: { shapes: groupedShapes },
+                userId: client.userId,
+                timestamp: Date.now(),
+            }, undefined, 'high');
+
+        } catch (error) {
+            console.error('Group shapes error:', error);
+            const errorMessage = error instanceof Error ? error.message : 'Failed to group shapes';
+            this.sendError(client, errorMessage);
+        }
+    }
+
+    /**
+     * Handle ungrouping shapes
+     */
+    async handleUngroupShapes(client: WSClient, message: WSMessage, context: HandlerContext): Promise<void> {
+        const { shapeIds } = message.payload;
+
+        if (!Array.isArray(shapeIds) || shapeIds.length === 0) {
+            this.sendError(client, 'At least 1 shape ID is required to ungroup');
+            return;
+        }
+
+        try {
+            // Ungroup the shapes
+            const ungroupedShapes = await CanvasService.ungroupShapes(shapeIds, client.userId);
+
+            // Broadcast the ungrouped shapes to all users
+            context.broadcastToCanvasBatched(client.canvasId, {
+                type: 'SHAPES_UNGROUPED',
+                payload: { shapes: ungroupedShapes },
+                userId: client.userId,
+                timestamp: Date.now(),
+            }, undefined, 'high');
+
+        } catch (error) {
+            console.error('Ungroup shapes error:', error);
+            const errorMessage = error instanceof Error ? error.message : 'Failed to ungroup shapes';
+            this.sendError(client, errorMessage);
+        }
+    }
+
     async handle(client: WSClient, message: WSMessage, context: HandlerContext): Promise<void> {
         // This method dispatches to specific handlers
         switch (message.type) {
@@ -192,6 +255,12 @@ export class ShapeHandler extends BaseHandler {
                 break;
             case 'SHAPES_BATCH_UPDATE':
                 await this.handleBatchUpdate(client, message, context);
+                break;
+            case 'GROUP_SHAPES':
+                await this.handleGroupShapes(client, message, context);
+                break;
+            case 'UNGROUP_SHAPES':
+                await this.handleUngroupShapes(client, message, context);
                 break;
         }
     }
