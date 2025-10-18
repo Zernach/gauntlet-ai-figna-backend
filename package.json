@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nodemon src/server.ts",
     "build": "tsc",
-    "start": "clear && node dist/server.js",
+    "start": "node dist/server.js",
     "start:dev": "ts-node src/server.ts",
     "start:prod": "node dist/server.js",
     "start:prod:memory": "NODE_OPTIONS='--max-old-space-size=4096' node dist/server.js",
