@@ -54,8 +54,8 @@ app.use(cors({
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    exposedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'x-csrf-token'],
+    exposedHeaders: ['Content-Type', 'Authorization', 'X-Token-Expiring'],
     preflightContinue: false,
     optionsSuccessStatus: 204,
 }));
@@ -64,7 +64,20 @@ app.use(compression() as any);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Logging
+// Logging - with sensitive data filtering
+morgan.token('safe-body', (req: any) => {
+    if (req.body) {
+        const body = { ...req.body };
+        // Redact sensitive fields
+        const sensitiveFields = ['password', 'token', 'secret', 'key', 'apiKey', 'authorization'];
+        sensitiveFields.forEach(field => {
+            if (body[field]) body[field] = '***REDACTED***';
+        });
+        return JSON.stringify(body);
+    }
+    return '-';
+});
+
 if (process.env.NODE_ENV !== 'production') {
     app.use(morgan('dev'));
 } else {

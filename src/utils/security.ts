@@ -121,9 +121,16 @@ export function isOriginAllowed(origin: string | undefined, allowedOrigins: stri
  * Mask sensitive data for logging
  */
 export function maskSensitiveData(data: any): any {
-    const sensitiveKeys = ['password', 'token', 'secret', 'key', 'apiKey', 'authorization'];
+    const sensitiveKeys = ['password', 'token', 'secret', 'key', 'apikey', 'api_key', 'apiKey', 'authorization', 'bearer', 'openai'];
 
     if (typeof data === 'string') {
+        // Mask API keys that start with common prefixes
+        if (data.startsWith('sk-') || data.startsWith('pk-') || data.match(/^[A-Za-z0-9_-]{20,}$/)) {
+            if (data.length > 8) {
+                return data.substring(0, 4) + '***' + data.substring(data.length - 4);
+            }
+            return '***REDACTED***';
+        }
         // Mask tokens and keys in strings
         return data.replace(/([a-zA-Z0-9_-]{20,})/g, (match) => {
             if (match.length > 8) {
