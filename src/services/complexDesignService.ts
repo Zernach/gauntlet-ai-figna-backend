@@ -186,7 +186,6 @@ EVERY mobile design MUST include a bottom navigation tab bar with these exact sp
   * y: ${containerY + containerHeight - 80}
   * width: ${containerWidth}
   * height: 80
-- Background: Slightly elevated from main background (use card color from palette)
 - borderRadius: 0 (tab bars have no top corners rounded, only container has rounded corners)
 - zIndex: 100 (must be on top of all other content)
 - Contains 4-5 tab items evenly distributed across the width
@@ -219,20 +218,55 @@ SHAPE TYPES:
 3. text: { type, x, y, textContent, fontSize, fontFamily?, fontWeight?, color, opacity?, zIndex? }
    - **CRITICAL**: Text (x,y) represents the CENTER point of the text
    - Text expands outward from center in all directions based on fontSize and textContent length
+   
+**📐 TEXT POSITIONING MATHEMATICS (CRITICAL FOR MOBILE):**
+When positioning text, you must calculate the center position based on where the text should appear:
+- If you want text centered at x=100 with estimated width of 200px:
+  * Text will span from: 100 - (200/2) = 0 to 100 + (200/2) = 200
+  * Center position x should be: 100
+- For text inside a button at x=300, width=280:
+  * Button spans from x=300 to x=580
+  * Text center should be at: 300 + (280/2) = 440
+  * This ensures text is perfectly centered within the button bounds
+- For text near container edges:
+  * Left edge at ${contentAreaX}, avoid text center closer than ${contentAreaX + 75} (allows ~150px text width)
+  * Right edge at ${containerX + containerWidth}, avoid text center closer than ${containerX + containerWidth - 75}
+  * Always calculate: textCenterX = desiredCenterX, ensuring (textCenterX - estimatedWidth/2) >= leftBound and (textCenterX + estimatedWidth/2) <= rightBound
 
 **🚨 TEXT BOUNDARY RULES (MANDATORY):**
 ${deviceLayout === 'mobile' ? `
-For MOBILE designs, ALL text must stay within container boundaries:
-- Left boundary: Text center x must be at least ${contentAreaX + 50} (allows ~100px text width from center)
-- Right boundary: Text center x must be at most ${containerX + containerWidth - 50} (allows ~100px text width from center)
-- Top boundary: Text center y must be at least ${contentAreaY + 20} (allows text to render above center)
-- Bottom boundary: Text center y must be at most ${containerY + containerHeight - 100} (above tab bar)
-- For long text (>20 characters), position closer to center to ensure it doesn't overflow
-- For buttons/UI elements, always calculate text position as element center (elementX + width/2, elementY + height/2)
+For MOBILE designs, ALL text must stay within container boundaries using CENTER-BASED POSITIONING:
+
+**CENTER POINT CALCULATION METHOD:**
+- Text (x,y) is the CENTER of the text, not top-left corner
+- If text center is at x=100 and estimated width is 200px:
+  * Text spans from: 100 - (200/2) = 0 to 100 + (200/2) = 200
+  * Therefore, center at 100 correctly positions a 200px-wide text from 0 to 200
+  
+**BOUNDARY CONSTRAINTS (with center-based math):**
+- Left boundary: Text center x >= ${contentAreaX + 75} 
+  * Allows ~150px total text width (75px left + 75px right of center)
+  * Example: center at ${contentAreaX + 75} means text spans from ${contentAreaX} to ${contentAreaX + 150}
+- Right boundary: Text center x <= ${containerX + containerWidth - 75}
+  * Prevents text from overflowing right edge
+  * Example: center at ${containerX + containerWidth - 75} keeps text within bounds
+- Top boundary: Text center y >= ${contentAreaY + 20}
+- Bottom boundary: Text center y <= ${containerY + containerHeight - 100} (above tab bar)
+
+**FOR BUTTONS/UI ELEMENTS - PERFECT CENTERING:**
+- Button at x=${contentAreaX}, width=280: Text center x = ${contentAreaX} + (280/2) = ${contentAreaX + 140}
+- Button at y=${contentAreaY + 100}, height=48: Text center y = ${contentAreaY + 100} + (48/2) = ${contentAreaY + 124}
+- This ensures text center aligns with button center for perfect visual centering
+
+**TEXT WIDTH ESTIMATION GUIDE:**
+- Short text (<10 chars): ~80-120px width → safe with 75px margin from edges
+- Medium text (10-20 chars): ~120-200px width → position center closer to middle
+- Long text (>20 chars): ~200-300px width → must be centered in content area
 ` : `
 For WEB designs, text should stay comfortably within content area:
 - Keep text x between ${contentAreaX + 30} and ${containerX + containerWidth - 30}
 - Keep text y between ${contentAreaY + 20} and ${containerY + containerHeight - 20}
+- Same center-based positioning applies: text (x,y) is the center point
 `}
 
 DESIGN PRINCIPLES FOR BEAUTY:
@@ -246,15 +280,23 @@ DESIGN PRINCIPLES FOR BEAUTY:
    - Subtle shadows via layering (not opacity unless for transparency effect)
    - Generous padding inside containers
 7. **Typography Scale**: Use clear size differences (1.5x-2x between levels)
-8. **BUTTON TEXT CENTERING (CRITICAL)**: 
+8. **BUTTON TEXT CENTERING (CRITICAL - CENTER-BASED POSITIONING)**: 
    - For ANY text inside a button/rectangle:
      * HORIZONTAL CENTER: textX = buttonX + (buttonWidth / 2)
      * VERTICAL CENTER: textY = buttonY + (buttonHeight / 2)
    - The (x, y) for text represents the CENTER POINT, not top-left
-   - Example: Button at (100, 200) with width 200, height 48
-     * Button text should be at x: 100 + (200/2) = 200, y: 200 + (48/2) = 224
-   - This ensures PERFECT horizontal and vertical centering of button text
+   - **MATHEMATICS OF CENTER-BASED TEXT:**
+     * If button is at x=100, width=200: Button spans from 100 to 300
+     * Text center should be at: 100 + (200/2) = 200 (middle of 100 and 300)
+     * With text width of 80px, text spans from: 200 - 40 = 160 to 200 + 40 = 240
+     * This positions the 80px text perfectly centered within the 200px button
+   - Example calculation for mobile button:
+     * Button: x=${contentAreaX}, width=280, height=48
+     * Text center: x=${contentAreaX + 140}, y=${contentAreaY + 24}
+     * If text is "Sign Up" (~60px wide), it spans from ${contentAreaX + 110} to ${contentAreaX + 170}
+     * Result: Perfectly centered within button bounds
    - ALWAYS calculate text position relative to button center, not edges
+   - Remember: center at C, width W → text spans from (C - W/2) to (C + W/2)
 
 PROFESSIONAL COLOR SCHEMES (Choose based on ${colorScheme} request):
 - Modern Dark: 
@@ -270,11 +312,24 @@ PROFESSIONAL COLOR SCHEMES (Choose based on ${colorScheme} request):
   * Background: #000000, Container: #0F172A, Cards: #1E293B
   * Primary: #0EA5E9, Accent: #F59E0B, Text: #E2E8F0, Subtext: #94A3B8
 
-COORDINATE CALCULATION EXAMPLES:
+COORDINATE CALCULATION EXAMPLES (with CENTER-BASED TEXT math):
 - Container background (FIRST): x:${containerX}, y:${containerY}, width:${containerWidth}, height:${containerHeight}
-- Header text: x:${contentAreaX}, y:${contentAreaY + 40}, fontSize:${deviceLayout === 'mobile' ? 28 : 36}
-- Primary button (rectangle): x:${contentAreaX}, y:${Math.floor(containerY + containerHeight - contentPadding - 60)}, width:${deviceLayout === 'mobile' ? Math.floor(contentAreaWidth) : 200}, height:48
-- Primary button text (CENTERED): x:${contentAreaX + (deviceLayout === 'mobile' ? Math.floor(contentAreaWidth) : 200) / 2}, y:${Math.floor(containerY + containerHeight - contentPadding - 60) + 24}, textContent:"Click Me", fontSize:16
+
+- Header text example: 
+  * Text: "Welcome Back" (~160px estimated width, fontSize:28)
+  * Position: x:${contentAreaX + 80}, y:${contentAreaY + 40}
+  * Spans from: ${contentAreaX + 80} - 80 = ${contentAreaX} to ${contentAreaX + 80} + 80 = ${contentAreaX + 160}
+  * Result: Left-aligned within content area, properly contained
+
+- Primary button with centered text:
+  * Button: x:${contentAreaX}, y:${Math.floor(containerY + containerHeight - contentPadding - 60)}, width:${deviceLayout === 'mobile' ? Math.floor(contentAreaWidth) : 200}, height:48
+  * Button text calculation:
+    - Button center x: ${contentAreaX} + (${deviceLayout === 'mobile' ? Math.floor(contentAreaWidth) : 200}/2) = ${contentAreaX + (deviceLayout === 'mobile' ? Math.floor(contentAreaWidth) : 200) / 2}
+    - Button center y: ${Math.floor(containerY + containerHeight - contentPadding - 60)} + (48/2) = ${Math.floor(containerY + containerHeight - contentPadding - 60) + 24}
+  * Text: x:${contentAreaX + (deviceLayout === 'mobile' ? Math.floor(contentAreaWidth) : 200) / 2}, y:${Math.floor(containerY + containerHeight - contentPadding - 60) + 24}, textContent:"Click Me", fontSize:16
+  * With "Click Me" (~70px wide): spans from ${contentAreaX + (deviceLayout === 'mobile' ? Math.floor(contentAreaWidth) : 200) / 2 - 35} to ${contentAreaX + (deviceLayout === 'mobile' ? Math.floor(contentAreaWidth) : 200) / 2 + 35}
+  * Result: PERFECTLY centered within button
+
 - Card/Section: x:${contentAreaX}, y:${contentAreaY + 120}, width:${Math.floor(contentAreaWidth)}, height:200
 ${deviceLayout === 'mobile' ? `
 - **BOTTOM TAB BAR (MANDATORY FOR MOBILE):**
@@ -308,7 +363,13 @@ Return ONLY a valid JSON object with this exact structure:
     }
 }
 
-CRITICAL: Note in the example above, the button text is at x: ${contentAreaX + 100} (button x + width/2) and y: ${contentAreaY + 144} (button y + height/2) to achieve perfect centering!
+CRITICAL: Note in the example above, the button text positioning demonstrates CENTER-BASED math:
+- Button: x=${contentAreaX}, width=200 → Button spans from ${contentAreaX} to ${contentAreaX + 200}
+- Text center: x=${contentAreaX + 100} (which is ${contentAreaX} + 200/2)
+- If text "Button" is ~60px wide, it spans from ${contentAreaX + 70} (100-30) to ${contentAreaX + 130} (100+30)
+- Result: 60px text perfectly centered within 200px button
+- Same for y-axis: Button y=${contentAreaY + 120}, height=48 → Text center y=${contentAreaY + 144} (which is ${contentAreaY + 120} + 48/2)
+- This is the EXACT calculation you must use for ALL text in mobile designs!
 
 🚨 **RESPONSE FORMAT RULES (CRITICAL):**
 1. Return ONLY the raw JSON object - NO markdown, NO code blocks, NO explanations
@@ -348,7 +409,13 @@ Generate a BEAUTIFUL, professional ${deviceLayout === 'mobile' ? 'mobile-first' 
    - Proper z-index layering: container(z:1) → cards(z:2-5) → content(z:6-10) → text(z:11-20)
    - Rounded corners for modern feel (12-${deviceLayout === 'mobile' ? 32 : 16}px)
    - Perfect alignment and consistent spacing (multiples of 8px)
-   - **BUTTON TEXT MUST BE PERFECTLY CENTERED**: For all button text, calculate position as (buttonX + buttonWidth/2, buttonY + buttonHeight/2)
+   - **BUTTON TEXT MUST BE PERFECTLY CENTERED (CENTER-BASED MATH)**: 
+     * Formula: textCenterX = buttonX + (buttonWidth / 2), textCenterY = buttonY + (buttonHeight / 2)
+     * Example: Button at x=${contentAreaX}, width=280, height=48
+     * Text center: x=${contentAreaX + 140}, y=${contentAreaY + 24}
+     * If text "Sign Up" is 60px wide, it spans from ${contentAreaX + 110} to ${contentAreaX + 170}
+     * This achieves perfect centering because: center(${contentAreaX + 140}) - width/2(30) = ${contentAreaX + 110} starts properly within button
+     * Apply this calculation to EVERY text element in buttons, cards, and UI components
    
 4. **${deviceLayout.toUpperCase()} BEST PRACTICES:**
    ${deviceLayout === 'mobile'
@@ -367,11 +434,27 @@ Generate a BEAUTIFUL, professional ${deviceLayout === 'mobile' ? 'mobile-first' 
    - First tab should be active (primary color), others inactive (subtext color)
    - Main content MUST NOT extend below y:${containerY + containerHeight - 100} to avoid tab bar overlap
    
-   🚨 **TEXT BOUNDARY ENFORCEMENT:**
-   - ALL text must stay within container bounds
-   - NO text should extend beyond x:${containerX + 40} to x:${containerX + containerWidth - 40}
-   - NO text should extend beyond y:${contentAreaY + 20} to y:${containerY + containerHeight - 100}
-   - For long text, position it closer to horizontal center to prevent overflow`
+   🚨 **TEXT BOUNDARY ENFORCEMENT (CENTER-BASED MATH):**
+   - Remember: Text position (x,y) is the CENTER, not top-left corner
+   - Text with center at C and width W spans from (C - W/2) to (C + W/2)
+   
+   **Calculation approach:**
+   - Container left edge: ${containerX + contentPadding} (content area start)
+   - Container right edge: ${containerX + containerWidth - contentPadding} (content area end)
+   - For text with estimated width W:
+     * Minimum text center x: ${containerX + contentPadding} + (W/2)
+     * Maximum text center x: ${containerX + containerWidth - contentPadding} - (W/2)
+   
+   **Practical examples:**
+   - Short text "Home" (~50px): center between ${containerX + contentPadding + 25} and ${containerX + containerWidth - contentPadding - 25}
+   - Medium "Welcome Back" (~150px): center between ${containerX + contentPadding + 75} and ${containerX + containerWidth - contentPadding - 75}
+   - Long text (>200px): MUST be centered near horizontal middle of content area
+   
+   **Safe positioning strategy:**
+   - Estimate text width based on character count and fontSize
+   - Calculate: textCenterX = elementCenterX (for buttons) OR safeAreaCenterX (for standalone text)
+   - Verify: (textCenterX - estimatedWidth/2) >= ${containerX + contentPadding} AND (textCenterX + estimatedWidth/2) <= ${containerX + containerWidth - contentPadding}
+   - All text y positions must stay between ${contentAreaY + 20} and ${containerY + containerHeight - 100}`
             : '- Multi-column layouts allowed\n   - Grid-based alignment\n   - Spacious sections with clear separation\n   - Traditional navigation patterns\n   - NO bottom tab bar required'}
 
 🚨 **CRITICAL OUTPUT REQUIREMENTS:**
