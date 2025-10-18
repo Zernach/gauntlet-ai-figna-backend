@@ -29,7 +29,6 @@ router.post('/relay', enhancedAuthenticateUser, async (req: AuthRequest, res: Re
         }
 
         const OPENAI_API_KEY = getAPIKey('openai');
-        console.log('OPENAI_API_KEY', OPENAI_API_KEY)
 
         // Call OpenAI to generate a relay session
         const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
@@ -67,6 +66,7 @@ AVAILABLE TOOLS:
   → USE THIS for: login forms, dashboards, landing pages, navigation bars, product pages, pricing cards, hero sections, registration forms, app screens, complete layouts, multi-component designs
   → DO NOT manually create these complex designs yourself
   → Just pass the description to this tool and let the backend handle it
+  → Parameters: description (required), style, colorScheme, complexity, deviceLayout ("mobile" or "web" - defaults to "mobile"), viewport
 
 COORDINATE SYSTEM:
 - Canvas is 50000x50000 pixels (center: x=25000, y=25000)
@@ -95,11 +95,11 @@ COMMAND EXAMPLES:
 "Move it to the center" → updateShapes({shapes: [{shapeId: "id", x: 25000, y: 25000}]})
 
 === COMPLEX DESIGNS (use generateComplexDesign) ===
-"Design a login screen" → generateComplexDesign({description: "modern login form", style: "modern", colorScheme: "dark"})
-"Create a dashboard" → generateComplexDesign({description: "analytics dashboard with stats", complexity: "complex"})
-"Build a landing page" → generateComplexDesign({description: "hero section with CTA buttons"})
-"Design a pricing page" → generateComplexDesign({description: "pricing cards with three tiers"})
-"Make a navigation bar" → generateComplexDesign({description: "navigation bar with menu items"})
+"Design a login screen" → generateComplexDesign({description: "modern login form", style: "modern", colorScheme: "dark", deviceLayout: "mobile"})
+"Create a dashboard" → generateComplexDesign({description: "analytics dashboard with stats", complexity: "complex", deviceLayout: "web"})
+"Build a landing page" → generateComplexDesign({description: "hero section with CTA buttons"}) // defaults to mobile
+"Design a pricing page" → generateComplexDesign({description: "pricing cards with three tiers", deviceLayout: "mobile"})
+"Make a navigation bar" → generateComplexDesign({description: "navigation bar with menu items", deviceLayout: "web"})
 
 CRITICAL: For ANY complex multi-component design, ALWAYS use generateComplexDesign instead of manually creating shapes. This includes forms, pages, dashboards, navigation, cards, etc.`,
             }),
@@ -155,7 +155,7 @@ router.post('/create-complex-design', enhancedAuthenticateUser, async (req: Auth
         }
 
         // Validate request body
-        const { description, style, colorScheme, complexity, viewport } = req.body as DesignRequest;
+        const { description, style, colorScheme, complexity, deviceLayout, viewport } = req.body as DesignRequest;
 
         if (!description || typeof description !== 'string' || description.trim().length === 0) {
             res.status(400).json({
@@ -171,7 +171,7 @@ router.post('/create-complex-design', enhancedAuthenticateUser, async (req: Auth
             SecurityEventType.SUSPICIOUS_ACTIVITY,
             'Complex design generation requested',
             req.user?.uid,
-            { description, style, colorScheme, complexity }
+            { description, style, colorScheme, complexity, deviceLayout: deviceLayout || 'mobile' }
         );
 
         // Generate the design using LangChain
@@ -180,6 +180,7 @@ router.post('/create-complex-design', enhancedAuthenticateUser, async (req: Auth
             style,
             colorScheme,
             complexity,
+            deviceLayout, // Defaults to 'mobile' in the service if not provided
             viewport,
         };
 
