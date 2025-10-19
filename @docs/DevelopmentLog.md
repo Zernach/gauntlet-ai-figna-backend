@@ -1,5 +1,12 @@
 # 🤖 Development Log
 
+Lessons Learned:
+- begin with a global state management (ie: redux) to ensure that complexity builds on top of it
+- do not allow types/interfaces to be built with both camelCase and snake_case (causes slop)
+- instead of writing functions to "normalize" objects, just write it correctly once in types
+- although code has been generated obscenely fast, it's also obscenely sloppy if not careful
+- do not include /api in the env variables
+
 I definitely made mistakes along the way that slowed me down by many hours and forced me to restart from scratch twice (once on front-end and once on back-end) like pulling off band-aids, but these were learning opportunities. My most time-consuming mistake was trying to shoe-horn this project into the infrastructure of my other portfolio projects, but because my portfolio is such a large codebase, it caused sloppy AI behavior and a cluttered mess, which would've been an awful submission. There must certainly be better strategies for working in large codebases, but that is not this week. 
 
 My strategy for developing this project was very incremental:
