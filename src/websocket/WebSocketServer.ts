@@ -634,7 +634,7 @@ export class WebSocketServer {
         const allowedUpdates: any = {};
         if (updates && typeof updates === 'object') {
             if (updates.backgroundColor !== undefined) {
-                allowedUpdates.backgroundColor = updates.backgroundColor;
+                allowedUpdates.background_color = updates.backgroundColor;
             }
         }
 
