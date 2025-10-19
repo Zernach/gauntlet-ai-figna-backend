@@ -20,7 +20,8 @@ CREATE TYPE canvas_object_type AS ENUM (
     'text',
     'line',
     'polygon',
-    'image'
+    'image',
+    'icon'
 );
 
 CREATE TYPE ai_command_status AS ENUM (
@@ -116,6 +117,9 @@ CREATE TABLE canvas_objects (
     font_family VARCHAR(100) DEFAULT 'Inter',
     font_weight VARCHAR(20) DEFAULT 'normal',
     text_align VARCHAR(20) DEFAULT 'left',
+    image_url TEXT,
+    icon_name VARCHAR(100),
+    keep_aspect_ratio BOOLEAN DEFAULT TRUE,
     z_index INTEGER NOT NULL,
     locked_at TIMESTAMP,
     locked_by UUID REFERENCES users(id),
@@ -491,6 +495,9 @@ COMMENT ON TABLE canvas_versions IS 'Canvas snapshots for history/recovery';
 COMMENT ON TABLE canvas_collaborators IS 'Canvas sharing and permissions';
 COMMENT ON TABLE canvas_comments IS 'Comments on canvas areas or objects';
 COMMENT ON TABLE canvas_activity IS 'Audit trail for canvas activities';
+
+-- Column comments
+COMMENT ON COLUMN canvas_objects.keep_aspect_ratio IS 'Whether to maintain aspect ratio when resizing images (default: true)';
 
 -- ==========================================
 -- PERFORMANCE NOTES

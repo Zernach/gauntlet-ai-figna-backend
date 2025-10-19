@@ -71,6 +71,39 @@ export class CanvasService {
     private static readonly PUBLIC_CANVAS_OWNER_ID = '00000000-0000-0000-0000-000000000001'; // System user
 
     /**
+     * Extract the real image URL from proxy URLs
+     * NEVER save localhost URLs to the database
+     * @param url The URL to process (might be a proxy URL)
+     * @returns The real image URL (unwrapped from proxy if necessary)
+     */
+    private static extractRealImageUrl(url: string): string {
+        try {
+            // Check if this is a proxy URL pattern: /api/voice/proxy-image?url=...
+            if (url.includes('/api/voice/proxy-image?url=') || url.includes('/proxy-image?url=')) {
+                // Extract the URL parameter from the proxy URL
+                const urlObj = new URL(url, 'http://localhost:3001'); // Provide base for relative URLs
+                const realUrl = urlObj.searchParams.get('url');
+
+                if (realUrl) {
+                    // Decode and return the real URL
+                    return decodeURIComponent(realUrl);
+                }
+            }
+
+            // If it's a localhost URL without the proxy pattern, reject it
+            if (url.includes('localhost') || url.includes('127.0.0.1')) {
+                throw new Error('Localhost URLs cannot be saved to the database');
+            }
+
+            // Return the URL as-is if it's not a proxy URL
+            return url;
+        } catch (error) {
+            console.error('[CanvasService] Error extracting real image URL:', error);
+            throw new Error(`Invalid image URL: ${error instanceof Error ? error.message : 'URL processing failed'}`);
+        }
+    }
+
+    /**
      * Ensure the system user exists (for owning public resources)
      */
     private static async ensureSystemUser(): Promise<void> {
@@ -452,6 +485,29 @@ export class CanvasService {
 
         const nextZIndex = (maxZData?.z_index || 0) + 1;
 
+        // Set default image URL and dimensions for image type if not provided
+        let imageUrl = shapeData.imageUrl;
+        let width = shapeData.width;
+        let height = shapeData.height;
+
+        if (shapeData.type === 'image') {
+            // CRITICAL FIX: Extract real URL from proxy URLs
+            // Never save localhost URLs to the database
+            if (imageUrl) {
+                imageUrl = this.extractRealImageUrl(imageUrl);
+            }
+
+            if (!imageUrl) {
+                imageUrl = 'https://raw.githubusercontent.com/landscapesupply/images/refs/heads/main/products/sod/TifBlaire_Centipede_Grass_Sod_Sale_Landscape_Supply_App.png';
+            }
+            if (!width) {
+                width = 800;
+            }
+            if (!height) {
+                height = 525;
+            }
+        }
+
         const { data: shape, error } = await client
             .from('canvas_objects')
             .insert({
@@ -459,8 +515,8 @@ export class CanvasService {
                 type: shapeData.type,
                 x: shapeData.x,
                 y: shapeData.y,
-                width: shapeData.width,
-                height: shapeData.height,
+                width: width,
+                height: height,
                 radius: shapeData.radius,
                 rotation: shapeData.rotation || 0,
                 color: shapeData.color,
@@ -475,6 +531,9 @@ export class CanvasService {
                 font_family: shapeData.fontFamily || 'Inter',
                 font_weight: shapeData.fontWeight || 'normal',
                 text_align: shapeData.textAlign || 'left',
+                image_url: imageUrl,
+                icon_name: shapeData.iconName,
+                keep_aspect_ratio: shapeData.keepAspectRatio ?? (shapeData.type === 'image' ? true : undefined),
                 z_index: shapeData.zIndex || nextZIndex,
                 created_by: userId,
             })
@@ -505,13 +564,22 @@ export class CanvasService {
             rotation: 'rotation', color: 'color', strokeColor: 'stroke_color',
             strokeWidth: 'stroke_width', opacity: 'opacity', shadowColor: 'shadow_color', shadowStrength: 'shadow_strength', borderRadius: 'border_radius', textContent: 'text_content',
             fontSize: 'font_size', fontFamily: 'font_family', fontWeight: 'font_weight',
-            textAlign: 'text_align', zIndex: 'z_index', lockedAt: 'locked_at',
+            textAlign: 'text_align', imageUrl: 'image_url', iconName: 'icon_name',
+            keepAspectRatio: 'keep_aspect_ratio',
+            zIndex: 'z_index', lockedAt: 'locked_at',
             lockedBy: 'locked_by', isVisible: 'is_visible'
         };
 
         for (const [key, dbField] of Object.entries(fieldMap)) {
             if (shapeData[key as keyof UpdateShapeRequest] !== undefined) {
-                updateData[dbField] = shapeData[key as keyof UpdateShapeRequest];
+                let value = shapeData[key as keyof UpdateShapeRequest];
+
+                // CRITICAL FIX: Extract real URL from proxy URLs for imageUrl
+                if (key === 'imageUrl' && typeof value === 'string') {
+                    value = this.extractRealImageUrl(value);
+                }
+
+                updateData[dbField] = value;
             }
         }
 

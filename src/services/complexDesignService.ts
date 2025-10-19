@@ -1,5 +1,6 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { getAPIKey } from '../config/apiKeys';
+import { generateImage } from './imageGenerationService';
 
 // Using type annotations for messages instead of importing classes
 interface MessageContent {
@@ -28,7 +29,7 @@ export interface DesignRequest {
 }
 
 export interface ShapeSpec {
-    type: 'rectangle' | 'circle' | 'text';
+    type: 'rectangle' | 'circle' | 'text' | 'icon' | 'image';
     x?: number;
     y?: number;
     width?: number;
@@ -39,6 +40,9 @@ export interface ShapeSpec {
     fontSize?: number;
     fontFamily?: string;
     fontWeight?: string;
+    iconName?: string;
+    imageUrl?: string;
+    imagePrompt?: string;  // Used to generate the image
     opacity?: number;
     rotation?: number;
     borderRadius?: number;
@@ -53,6 +57,80 @@ export interface DesignResponse {
         estimatedComplexity: string;
         designStyle: string;
     };
+}
+
+/**
+ * Process image shapes by generating actual images using DALL-E
+ */
+async function processImageShapes(shapes: ShapeSpec[]): Promise<ShapeSpec[]> {
+    const processedShapes: ShapeSpec[] = [];
+
+    for (const shape of shapes) {
+        if (shape.type === 'image' && shape.imagePrompt && !shape.imageUrl) {
+            try {
+                console.log(`[ComplexDesign] Generating image for: "${shape.imagePrompt}"`);
+
+                // Determine best image size based on shape dimensions
+                let size: '1024x1024' | '1024x1792' | '1792x1024' = '1024x1024';
+                if (shape.width && shape.height) {
+                    const aspectRatio = shape.width / shape.height;
+                    if (aspectRatio > 1.3) {
+                        size = '1792x1024'; // Landscape
+                    } else if (aspectRatio < 0.7) {
+                        size = '1024x1792'; // Portrait
+                    }
+                }
+
+                // Generate the image
+                const result = await generateImage({
+                    prompt: shape.imagePrompt,
+                    style: 'vivid', // Use vivid for more dramatic, eye-catching images
+                    size: size,
+                    quality: 'hd', // Always use HD for design work
+                });
+
+                console.log(`[ComplexDesign] Image generated successfully: ${result.imageUrl.substring(0, 100)}...`);
+
+                // Replace imagePrompt with actual imageUrl
+                processedShapes.push({
+                    ...shape,
+                    imageUrl: result.imageUrl,
+                    // Keep imagePrompt for reference but it won't be used by frontend
+                });
+            } catch (error) {
+                console.error('[ComplexDesign] Failed to generate image:', error);
+                // If image generation fails, convert to a placeholder rectangle
+                processedShapes.push({
+                    type: 'rectangle',
+                    x: shape.x,
+                    y: shape.y,
+                    width: shape.width,
+                    height: shape.height,
+                    color: '#333333',
+                    borderRadius: shape.borderRadius,
+                    opacity: shape.opacity,
+                    zIndex: shape.zIndex,
+                });
+                // Add text indicating failed image generation
+                if (shape.x && shape.y && shape.width && shape.height) {
+                    processedShapes.push({
+                        type: 'text',
+                        x: shape.x + (shape.width / 2),
+                        y: shape.y + (shape.height / 2),
+                        textContent: 'Image Failed',
+                        fontSize: 16,
+                        color: '#888888',
+                        zIndex: (shape.zIndex || 0) + 1,
+                    });
+                }
+            }
+        } else {
+            // Keep non-image shapes as-is
+            processedShapes.push(shape);
+        }
+    }
+
+    return processedShapes;
 }
 
 /**
@@ -181,24 +259,20 @@ ${deviceLayout === 'mobile' ? `
 
 **🚨 MANDATORY BOTTOM TAB BAR FOR MOBILE (CRITICAL):**
 EVERY mobile design MUST include a bottom navigation tab bar with these exact specifications:
-- Position: Bottom of container
-  * x: ${containerX}
-  * y: ${containerY + containerHeight - 80}
-  * width: ${containerWidth}
-  * height: 80
-- borderRadius: 0 (tab bars have no top corners rounded, only container has rounded corners)
-- zIndex: 100 (must be on top of all other content)
+- Position: Bottom of container (no background rectangle needed)
 - Contains 4-5 tab items evenly distributed across the width
 - Each tab item MUST have:
-  * A circle icon placeholder (radius: 12px)
+  * An icon shape (type: 'icon', iconName: choose appropriate icon, fontSize: 24)
   * A text label CENTERED DIRECTLY BELOW the icon (fontSize: 11px)
   * **CRITICAL CENTERING**: Icon and text must share the SAME x-coordinate for perfect vertical alignment
-  * Icon y-position: ${containerY + containerHeight - 60} (20px from bottom, centered in upper portion)
-  * Text y-position: ${containerY + containerHeight - 28} (12px from bottom, centered in lower portion)
+  * Icon y-position: ${containerY + containerHeight - 60} (60px from bottom)
+  * Text y-position: ${containerY + containerHeight - 28} (28px from bottom)
   * Spacing: Divide tab bar width into equal sections (${containerWidth} / 4 or ${containerWidth} / 5)
   * For 4 tabs, x-positions: ${containerX + Math.floor(containerWidth / 8)}, ${containerX + Math.floor(containerWidth * 3 / 8)}, ${containerX + Math.floor(containerWidth * 5 / 8)}, ${containerX + Math.floor(containerWidth * 7 / 8)}
   * For 5 tabs, x-positions: ${containerX + Math.floor(containerWidth / 10)}, ${containerX + Math.floor(containerWidth * 3 / 10)}, ${containerX + Math.floor(containerWidth * 5 / 10)}, ${containerX + Math.floor(containerWidth * 7 / 10)}, ${containerX + Math.floor(containerWidth * 9 / 10)}
+  * Suggested icons: 'home', 'search', 'plus' (for Create), 'user' (for Profile)
   * Colors: Use subtext color for inactive tabs, primary color for active tab
+  * zIndex: 100 (must be on top of all other content)
 - Active tab: First tab should be in active state (primary color)
 - Content safe zone MUST account for tab bar: Content should not extend below y: ${containerY + containerHeight - 100}
 ` : `
@@ -212,61 +286,56 @@ EVERY mobile design MUST include a bottom navigation tab bar with these exact sp
 - NO bottom tab bar required for web layouts
 `}
 
-SHAPE TYPES:
+SHAPE TYPES & POSITIONING:
+
+🎯 **CRITICAL: ALL TEXT AND ICONS USE CENTER-BASED POSITIONING**
+The (x, y) coordinates for text and icons represent the CENTER POINT, not the top-left corner.
+
 1. rectangle: { type, x, y, width, height, color, borderRadius?, opacity?, zIndex? }
+   - (x, y) = top-left corner
+
 2. circle: { type, x, y, radius, color, opacity?, zIndex? }
+   - (x, y) = center point
+
 3. text: { type, x, y, textContent, fontSize, fontFamily?, fontWeight?, color, opacity?, zIndex? }
-   - **CRITICAL**: Text (x,y) represents the CENTER point of the text
-   - Text expands outward from center in all directions based on fontSize and textContent length
+   - (x, y) = CENTER POINT of the text
+   - Text renders symmetrically around this center point
    
-**📐 TEXT POSITIONING MATHEMATICS (CRITICAL FOR MOBILE):**
-When positioning text, you must calculate the center position based on where the text should appear:
-- If you want text centered at x=100 with estimated width of 200px:
-  * Text will span from: 100 - (200/2) = 0 to 100 + (200/2) = 200
-  * Center position x should be: 100
-- For text inside a button at x=300, width=280:
-  * Button spans from x=300 to x=580
-  * Text center should be at: 300 + (280/2) = 440
-  * This ensures text is perfectly centered within the button bounds
-- For text near container edges:
-  * Left edge at ${contentAreaX}, avoid text center closer than ${contentAreaX + 75} (allows ~150px text width)
-  * Right edge at ${containerX + containerWidth}, avoid text center closer than ${containerX + containerWidth - 75}
-  * Always calculate: textCenterX = desiredCenterX, ensuring (textCenterX - estimatedWidth/2) >= leftBound and (textCenterX + estimatedWidth/2) <= rightBound
+4. icon: { type, x, y, iconName, fontSize?, color?, opacity?, zIndex? }
+   - (x, y) = CENTER POINT of the icon
+   - fontSize controls the icon size (default: 64, typical range: 24-128)
+   - Available iconName values: 'smile', 'heart', 'star', 'check', 'cross', 'fire', 'rocket', 'thumbs-up', 'thumbs-down', 'warning', 'info', 'question', 'lightbulb', 'flag', 'pin', 'calendar', 'clock', 'home', 'folder', 'email', 'user', 'users', 'lock', 'unlock', 'key', 'settings', 'profile', 'shield', 'cart', 'card', 'money', 'tag', 'package', 'payment', 'bag', 'receipt', 'gift', 'diamond', 'plane', 'hotel', 'ticket', 'globe', 'map', 'compass', 'car', 'train', 'chat', 'phone', 'camera', 'eye', 'bell', 'message', 'megaphone', 'video', 'mic', 'chart', 'trending-up', 'trending-down', 'search', 'edit', 'save', 'cloud', 'refresh', 'download', 'upload', 'plus', 'minus', 'trash', 'clipboard', 'document', 'book', 'bookmark', 'link', 'party', 'cake', 'balloons', 'trophy', 'medal', 'crown', 'battery', 'signal', 'wifi', 'location', 'target', 'hourglass', 'stopwatch', 'timer', 'music', 'play', 'pause', 'film', 'tv', 'headphones', 'tool', 'wrench', 'paintbrush', 'palette', 'bulb', 'magnet'
 
-**🚨 TEXT BOUNDARY RULES (MANDATORY):**
+5. image: { type, x, y, width, height, imagePrompt, borderRadius?, opacity?, zIndex? }
+   - (x, y) = top-left corner
+   - imagePrompt = detailed description of the image to generate (e.g., "professional photo of a modern office workspace", "vibrant illustration of a sunset over mountains")
+   - USE THIS for: hero images, product photos, background images, illustrations, any visual content
+   - The system will automatically generate the actual image using DALL-E based on your prompt
+   - Make imagePrompt detailed and specific for best results
+   - Common sizes: 300x200 (small), 600x400 (medium), 1200x800 (large), full container width for hero sections
+   - Example: { type: "image", x: ${contentAreaX}, y: ${contentAreaY + 20}, width: ${Math.floor(contentAreaWidth)}, height: 300, imagePrompt: "modern tech dashboard with graphs and charts, professional style", borderRadius: 12, zIndex: 3 }
+
+📐 **TEXT CENTERING FORMULA (USE THIS FOR EVERY TEXT ELEMENT):**
+
+To center text inside any element (button, card, container):
+- Horizontal: textX = elementX + (elementWidth / 2)
+- Vertical: textY = elementY + (elementHeight / 2)
+
+Example for button at x=${contentAreaX}, y=${contentAreaY + 100}, width=280, height=48:
+- Button text X: ${contentAreaX} + (280 / 2) = ${contentAreaX + 140}
+- Button text Y: ${contentAreaY + 100} + (48 / 2) = ${contentAreaY + 124}
+- Result: Text perfectly centered in button
+
+🚨 **TEXT BOUNDARY RULES:**
 ${deviceLayout === 'mobile' ? `
-For MOBILE designs, ALL text must stay within container boundaries using CENTER-BASED POSITIONING:
-
-**CENTER POINT CALCULATION METHOD:**
-- Text (x,y) is the CENTER of the text, not top-left corner
-- If text center is at x=100 and estimated width is 200px:
-  * Text spans from: 100 - (200/2) = 0 to 100 + (200/2) = 200
-  * Therefore, center at 100 correctly positions a 200px-wide text from 0 to 200
-  
-**BOUNDARY CONSTRAINTS (with center-based math):**
-- Left boundary: Text center x >= ${contentAreaX + 75} 
-  * Allows ~150px total text width (75px left + 75px right of center)
-  * Example: center at ${contentAreaX + 75} means text spans from ${contentAreaX} to ${contentAreaX + 150}
-- Right boundary: Text center x <= ${containerX + containerWidth - 75}
-  * Prevents text from overflowing right edge
-  * Example: center at ${containerX + containerWidth - 75} keeps text within bounds
-- Top boundary: Text center y >= ${contentAreaY + 20}
-- Bottom boundary: Text center y <= ${containerY + containerHeight - 100} (above tab bar)
-
-**FOR BUTTONS/UI ELEMENTS - PERFECT CENTERING:**
-- Button at x=${contentAreaX}, width=280: Text center x = ${contentAreaX} + (280/2) = ${contentAreaX + 140}
-- Button at y=${contentAreaY + 100}, height=48: Text center y = ${contentAreaY + 100} + (48/2) = ${contentAreaY + 124}
-- This ensures text center aligns with button center for perfect visual centering
-
-**TEXT WIDTH ESTIMATION GUIDE:**
-- Short text (<10 chars): ~80-120px width → safe with 75px margin from edges
-- Medium text (10-20 chars): ~120-200px width → position center closer to middle
-- Long text (>20 chars): ~200-300px width → must be centered in content area
+MOBILE: All text must fit within content area (${contentAreaX} to ${containerX + containerWidth - contentPadding}, ${contentAreaY} to ${containerY + containerHeight - 100})
+- For standalone text: Use horizontal center of content area (x ≈ ${contentAreaX + Math.floor(contentAreaWidth / 2)})
+- For text in elements: Use center formula above
+- Vertical spacing: Keep y between ${contentAreaY + 20} and ${containerY + containerHeight - 100}
 ` : `
-For WEB designs, text should stay comfortably within content area:
-- Keep text x between ${contentAreaX + 30} and ${containerX + containerWidth - 30}
-- Keep text y between ${contentAreaY + 20} and ${containerY + containerHeight - 20}
-- Same center-based positioning applies: text (x,y) is the center point
+WEB: All text must fit within content area (${contentAreaX} to ${containerX + containerWidth - contentPadding}, ${contentAreaY} to ${containerY + containerHeight - contentPadding})
+- For standalone text: Use horizontal center of content area (x ≈ ${contentAreaX + Math.floor(contentAreaWidth / 2)})
+- For text in elements: Use center formula above
 `}
 
 DESIGN PRINCIPLES FOR BEAUTY:
@@ -280,23 +349,28 @@ DESIGN PRINCIPLES FOR BEAUTY:
    - Subtle shadows via layering (not opacity unless for transparency effect)
    - Generous padding inside containers
 7. **Typography Scale**: Use clear size differences (1.5x-2x between levels)
-8. **BUTTON TEXT CENTERING (CRITICAL - CENTER-BASED POSITIONING)**: 
-   - For ANY text inside a button/rectangle:
-     * HORIZONTAL CENTER: textX = buttonX + (buttonWidth / 2)
-     * VERTICAL CENTER: textY = buttonY + (buttonHeight / 2)
-   - The (x, y) for text represents the CENTER POINT, not top-left
-   - **MATHEMATICS OF CENTER-BASED TEXT:**
-     * If button is at x=100, width=200: Button spans from 100 to 300
-     * Text center should be at: 100 + (200/2) = 200 (middle of 100 and 300)
-     * With text width of 80px, text spans from: 200 - 40 = 160 to 200 + 40 = 240
-     * This positions the 80px text perfectly centered within the 200px button
-   - Example calculation for mobile button:
-     * Button: x=${contentAreaX}, width=280, height=48
-     * Text center: x=${contentAreaX + 140}, y=${contentAreaY + 24}
-     * If text is "Sign Up" (~60px wide), it spans from ${contentAreaX + 110} to ${contentAreaX + 170}
-     * Result: Perfectly centered within button bounds
-   - ALWAYS calculate text position relative to button center, not edges
-   - Remember: center at C, width W → text spans from (C - W/2) to (C + W/2)
+8. **TEXT CENTERING**: Always use the centering formula from "SHAPE TYPES & POSITIONING" section above
+9. **USE IMAGES LIBERALLY**: 
+   - Hero sections should have compelling hero images
+   - Product/app designs should show product photos or screenshots
+   - Landing pages need engaging visual content
+   - Dashboard designs benefit from chart/graph visualizations
+   - Use imagePrompt to describe exactly what you want - the system generates it automatically
+   - Examples: "modern office workspace", "smartphone displaying app interface", "financial charts and graphs", "team collaboration in modern office"
+10. **🚨 CONTEXTUALLY RELEVANT TEXT CONTENT (CRITICAL):**
+   - **NEVER use generic placeholder text** like "Lorem Ipsum", "Welcome", "Click Here", "Sample Text"
+   - **ALL text content MUST be relevant** to the user's design request (industry, topic, use case)
+   - Generate realistic, topic-specific sample text that feels authentic to the design context
+   - Examples:
+     * Coffee shop app: "Fresh Brew Daily", "Artisan Coffee & Pastries", "Order Your Favorite Blend", "Espresso • Latte • Cappuccino"
+     * Fitness app: "Track Your Progress", "30-Day Challenge", "Burn Calories, Build Strength", "Today's Workout"
+     * Banking app: "Your Financial Dashboard", "Recent Transactions", "Transfer Funds", "Savings: $12,450.00"
+     * E-commerce: "New Arrivals", "Shop By Category", "Limited Time Offer", "Free Shipping on Orders $50+"
+     * Real estate: "Find Your Dream Home", "Properties in Your Area", "Schedule a Viewing", "3 Bed • 2 Bath • 1,850 sq ft"
+     * Restaurant: "Reserve a Table", "Chef's Special Tonight", "View Our Menu", "Open 5pm - 11pm"
+   - For longer text blocks, create industry-appropriate filler content (not Lorem Ipsum)
+   - Button text should be actionable and contextually relevant: "Order Now", "Book Appointment", "Get Started", "Learn More"
+   - Numbers and data should feel realistic for the context: "$24.99", "4.8 ★★★★★", "2.5k members", "15 min delivery"
 
 PROFESSIONAL COLOR SCHEMES (Choose based on ${colorScheme} request):
 - Modern Dark: 
@@ -312,36 +386,24 @@ PROFESSIONAL COLOR SCHEMES (Choose based on ${colorScheme} request):
   * Background: #000000, Container: #0F172A, Cards: #1E293B
   * Primary: #0EA5E9, Accent: #F59E0B, Text: #E2E8F0, Subtext: #94A3B8
 
-COORDINATE CALCULATION EXAMPLES (with CENTER-BASED TEXT math):
+COORDINATE CALCULATION EXAMPLES:
 - Container background (FIRST): x:${containerX}, y:${containerY}, width:${containerWidth}, height:${containerHeight}
 
-- Header text example: 
-  * Text: "Welcome Back" (~160px estimated width, fontSize:28)
-  * Position: x:${contentAreaX + 80}, y:${contentAreaY + 40}
-  * Spans from: ${contentAreaX + 80} - 80 = ${contentAreaX} to ${contentAreaX + 80} + 80 = ${contentAreaX + 160}
-  * Result: Left-aligned within content area, properly contained
-
-- Primary button with centered text:
+- Button with centered text:
   * Button: x:${contentAreaX}, y:${Math.floor(containerY + containerHeight - contentPadding - 60)}, width:${deviceLayout === 'mobile' ? Math.floor(contentAreaWidth) : 200}, height:48
-  * Button text calculation:
-    - Button center x: ${contentAreaX} + (${deviceLayout === 'mobile' ? Math.floor(contentAreaWidth) : 200}/2) = ${contentAreaX + (deviceLayout === 'mobile' ? Math.floor(contentAreaWidth) : 200) / 2}
-    - Button center y: ${Math.floor(containerY + containerHeight - contentPadding - 60)} + (48/2) = ${Math.floor(containerY + containerHeight - contentPadding - 60) + 24}
-  * Text: x:${contentAreaX + (deviceLayout === 'mobile' ? Math.floor(contentAreaWidth) : 200) / 2}, y:${Math.floor(containerY + containerHeight - contentPadding - 60) + 24}, textContent:"Click Me", fontSize:16
-  * With "Click Me" (~70px wide): spans from ${contentAreaX + (deviceLayout === 'mobile' ? Math.floor(contentAreaWidth) : 200) / 2 - 35} to ${contentAreaX + (deviceLayout === 'mobile' ? Math.floor(contentAreaWidth) : 200) / 2 + 35}
-  * Result: PERFECTLY centered within button
+  * Text (centered): x:${contentAreaX + (deviceLayout === 'mobile' ? Math.floor(contentAreaWidth) : 200) / 2}, y:${Math.floor(containerY + containerHeight - contentPadding - 60) + 24}, textContent:"Click Me", fontSize:16
 
 - Card/Section: x:${contentAreaX}, y:${contentAreaY + 120}, width:${Math.floor(contentAreaWidth)}, height:200
 ${deviceLayout === 'mobile' ? `
 - **BOTTOM TAB BAR (MANDATORY FOR MOBILE):**
-  * Tab bar background: x:${containerX}, y:${containerY + containerHeight - 80}, width:${containerWidth}, height:80, zIndex:100, borderRadius:0
-  * Tab 1 (ACTIVE) - Icon: x:${containerX + Math.floor(containerWidth / 8)}, y:${containerY + containerHeight - 60}, radius:12, color:primary, zIndex:101
-  * Tab 1 (ACTIVE) - Label: x:${containerX + Math.floor(containerWidth / 8)}, y:${containerY + containerHeight - 28}, text:"Home", fontSize:11, color:primary, zIndex:101
-  * Tab 2 - Icon: x:${containerX + Math.floor(containerWidth * 3 / 8)}, y:${containerY + containerHeight - 60}, radius:12, color:subtext, zIndex:101
-  * Tab 2 - Label: x:${containerX + Math.floor(containerWidth * 3 / 8)}, y:${containerY + containerHeight - 28}, text:"Search", fontSize:11, color:subtext, zIndex:101
-  * Tab 3 - Icon: x:${containerX + Math.floor(containerWidth * 5 / 8)}, y:${containerY + containerHeight - 60}, radius:12, color:subtext, zIndex:101
-  * Tab 3 - Label: x:${containerX + Math.floor(containerWidth * 5 / 8)}, y:${containerY + containerHeight - 28}, text:"Create", fontSize:11, color:subtext, zIndex:101
-  * Tab 4 - Icon: x:${containerX + Math.floor(containerWidth * 7 / 8)}, y:${containerY + containerHeight - 60}, radius:12, color:subtext, zIndex:101
-  * Tab 4 - Label: x:${containerX + Math.floor(containerWidth * 7 / 8)}, y:${containerY + containerHeight - 28}, text:"Profile", fontSize:11, color:subtext, zIndex:101
+  * Tab 1 (ACTIVE) - Icon: type:"icon", x:${containerX + Math.floor(containerWidth / 8)}, y:${containerY + containerHeight - 60}, iconName:"home", fontSize:24, color:primary, zIndex:100
+  * Tab 1 (ACTIVE) - Label: type:"text", x:${containerX + Math.floor(containerWidth / 8)}, y:${containerY + containerHeight - 28}, textContent:"Home", fontSize:11, color:primary, zIndex:100
+  * Tab 2 - Icon: type:"icon", x:${containerX + Math.floor(containerWidth * 3 / 8)}, y:${containerY + containerHeight - 60}, iconName:"search", fontSize:24, color:subtext, zIndex:100
+  * Tab 2 - Label: type:"text", x:${containerX + Math.floor(containerWidth * 3 / 8)}, y:${containerY + containerHeight - 28}, textContent:"Search", fontSize:11, color:subtext, zIndex:100
+  * Tab 3 - Icon: type:"icon", x:${containerX + Math.floor(containerWidth * 5 / 8)}, y:${containerY + containerHeight - 60}, iconName:"plus", fontSize:24, color:subtext, zIndex:100
+  * Tab 3 - Label: type:"text", x:${containerX + Math.floor(containerWidth * 5 / 8)}, y:${containerY + containerHeight - 28}, textContent:"Create", fontSize:11, color:subtext, zIndex:100
+  * Tab 4 - Icon: type:"icon", x:${containerX + Math.floor(containerWidth * 7 / 8)}, y:${containerY + containerHeight - 60}, iconName:"user", fontSize:24, color:subtext, zIndex:100
+  * Tab 4 - Label: type:"text", x:${containerX + Math.floor(containerWidth * 7 / 8)}, y:${containerY + containerHeight - 28}, textContent:"Profile", fontSize:11, color:subtext, zIndex:100
   * **NOTICE**: Each icon and its label share the EXACT SAME x-coordinate for perfect centering!
 ` : ''}
 
@@ -350,12 +412,12 @@ Return ONLY a valid JSON object with this exact structure:
 {
     "shapes": [
         { "type": "rectangle", "x": ${containerX}, "y": ${containerY}, "width": ${containerWidth}, "height": ${containerHeight}, "color": "#0A0A0A", "borderRadius": ${deviceLayout === 'mobile' ? 32 : 8}, "zIndex": 1 },
-        { "type": "rectangle", "x": ${contentAreaX}, "y": ${contentAreaY + 20}, "width": ${Math.floor(contentAreaWidth)}, "height": 80, "color": "#1A1A1A", "borderRadius": 16, "zIndex": 3 },
-        { "type": "text", "x": ${contentAreaX + 20}, "y": ${contentAreaY + 50}, "textContent": "Welcome", "fontSize": ${deviceLayout === 'mobile' ? 28 : 36}, "fontWeight": "bold", "color": "#FFFFFF", "zIndex": 10 },
-        { "type": "rectangle", "x": ${contentAreaX}, "y": ${contentAreaY + 120}, "width": 200, "height": 48, "color": "#4A90E2", "borderRadius": 12, "zIndex": 11 },
-        { "type": "text", "x": ${contentAreaX + 100}, "y": ${contentAreaY + 144}, "textContent": "Button", "fontSize": 16, "fontWeight": "600", "color": "#FFFFFF", "zIndex": 12 }
+        { "type": "image", "x": ${contentAreaX}, "y": ${contentAreaY + 20}, "width": ${Math.floor(contentAreaWidth)}, "height": 200, "imagePrompt": "professional modern tech workspace with laptop and coffee, clean minimalist desk", "borderRadius": 16, "zIndex": 3 },
+        { "type": "text", "x": ${contentAreaX + Math.floor(contentAreaWidth / 2)}, "y": ${contentAreaY + 250}, "textContent": "[Use contextually relevant text based on design request - e.g., 'Track Your Fitness Goals' for fitness app]", "fontSize": ${deviceLayout === 'mobile' ? 28 : 36}, "fontWeight": "bold", "color": "#FFFFFF", "zIndex": 10 },
+        { "type": "rectangle", "x": ${contentAreaX}, "y": ${contentAreaY + 300}, "width": 200, "height": 48, "color": "#4A90E2", "borderRadius": 12, "zIndex": 11 },
+        { "type": "text", "x": ${contentAreaX + 100}, "y": ${contentAreaY + 324}, "textContent": "[Contextual CTA - e.g., 'Start Training' for fitness app]", "fontSize": 16, "fontWeight": "600", "color": "#FFFFFF", "zIndex": 12 }
     ],
-    "description": "A beautiful, contained ${deviceLayout} design with proper hierarchy and centered button text",
+    "description": "A beautiful, contained ${deviceLayout} design with hero image, centered text, and call-to-action button",
     "metadata": {
         "shapeCount": 5,
         "estimatedComplexity": "simple",
@@ -363,13 +425,7 @@ Return ONLY a valid JSON object with this exact structure:
     }
 }
 
-CRITICAL: Note in the example above, the button text positioning demonstrates CENTER-BASED math:
-- Button: x=${contentAreaX}, width=200 → Button spans from ${contentAreaX} to ${contentAreaX + 200}
-- Text center: x=${contentAreaX + 100} (which is ${contentAreaX} + 200/2)
-- If text "Button" is ~60px wide, it spans from ${contentAreaX + 70} (100-30) to ${contentAreaX + 130} (100+30)
-- Result: 60px text perfectly centered within 200px button
-- Same for y-axis: Button y=${contentAreaY + 120}, height=48 → Text center y=${contentAreaY + 144} (which is ${contentAreaY + 120} + 48/2)
-- This is the EXACT calculation you must use for ALL text in mobile designs!
+NOTE: Replace bracketed placeholder text with actual contextually relevant text based on the user's design request (see rule #10 above).
 
 🚨 **RESPONSE FORMAT RULES (CRITICAL):**
 1. Return ONLY the raw JSON object - NO markdown, NO code blocks, NO explanations
@@ -409,13 +465,8 @@ Generate a BEAUTIFUL, professional ${deviceLayout === 'mobile' ? 'mobile-first' 
    - Proper z-index layering: container(z:1) → cards(z:2-5) → content(z:6-10) → text(z:11-20)
    - Rounded corners for modern feel (12-${deviceLayout === 'mobile' ? 32 : 16}px)
    - Perfect alignment and consistent spacing (multiples of 8px)
-   - **BUTTON TEXT MUST BE PERFECTLY CENTERED (CENTER-BASED MATH)**: 
-     * Formula: textCenterX = buttonX + (buttonWidth / 2), textCenterY = buttonY + (buttonHeight / 2)
-     * Example: Button at x=${contentAreaX}, width=280, height=48
-     * Text center: x=${contentAreaX + 140}, y=${contentAreaY + 24}
-     * If text "Sign Up" is 60px wide, it spans from ${contentAreaX + 110} to ${contentAreaX + 170}
-     * This achieves perfect centering because: center(${contentAreaX + 140}) - width/2(30) = ${contentAreaX + 110} starts properly within button
-     * Apply this calculation to EVERY text element in buttons, cards, and UI components
+   - **ALL TEXT MUST BE CENTERED**: Use formula textX = elementX + (elementWidth / 2), textY = elementY + (elementHeight / 2)
+   - **🚨 USE CONTEXTUALLY RELEVANT TEXT**: All text content (headings, buttons, labels) MUST relate to the design request's topic/industry. NO generic placeholders like "Welcome" or "Lorem Ipsum"!
    
 4. **${deviceLayout.toUpperCase()} BEST PRACTICES:**
    ${deviceLayout === 'mobile'
@@ -425,36 +476,20 @@ Generate a BEAUTIFUL, professional ${deviceLayout === 'mobile' ? 'mobile-first' 
    - Bottom-aligned primary actions
    
    🚨 **MANDATORY BOTTOM TAB BAR (CRITICAL):**
-   - EVERY mobile design MUST include a bottom navigation tab bar
-   - Tab bar specs: x:${containerX}, y:${containerY + containerHeight - 80}, width:${containerWidth}, height:80, zIndex:100, borderRadius:0
-   - Include 4 tab items (Home, Search, Create, Profile) with icons and labels
+   - EVERY mobile design MUST include a bottom navigation tab bar (no background rectangle needed)
+   - Include 4 tab items (Home, Search, Create, Profile) using icon shapes and text labels
+   - Use type: "icon" with iconName: "home", "search", "plus", "user" and fontSize: 24
    - **CRITICAL**: Each tab's icon and label MUST share the SAME x-coordinate (centered alignment)
    - Icon y: ${containerY + containerHeight - 60}, Label y: ${containerY + containerHeight - 28}
    - Tab x-positions (for 4 tabs): ${containerX + Math.floor(containerWidth / 8)}, ${containerX + Math.floor(containerWidth * 3 / 8)}, ${containerX + Math.floor(containerWidth * 5 / 8)}, ${containerX + Math.floor(containerWidth * 7 / 8)}
    - First tab should be active (primary color), others inactive (subtext color)
+   - zIndex: 100 for all tab items
    - Main content MUST NOT extend below y:${containerY + containerHeight - 100} to avoid tab bar overlap
    
-   🚨 **TEXT BOUNDARY ENFORCEMENT (CENTER-BASED MATH):**
-   - Remember: Text position (x,y) is the CENTER, not top-left corner
-   - Text with center at C and width W spans from (C - W/2) to (C + W/2)
-   
-   **Calculation approach:**
-   - Container left edge: ${containerX + contentPadding} (content area start)
-   - Container right edge: ${containerX + containerWidth - contentPadding} (content area end)
-   - For text with estimated width W:
-     * Minimum text center x: ${containerX + contentPadding} + (W/2)
-     * Maximum text center x: ${containerX + containerWidth - contentPadding} - (W/2)
-   
-   **Practical examples:**
-   - Short text "Home" (~50px): center between ${containerX + contentPadding + 25} and ${containerX + containerWidth - contentPadding - 25}
-   - Medium "Welcome Back" (~150px): center between ${containerX + contentPadding + 75} and ${containerX + containerWidth - contentPadding - 75}
-   - Long text (>200px): MUST be centered near horizontal middle of content area
-   
-   **Safe positioning strategy:**
-   - Estimate text width based on character count and fontSize
-   - Calculate: textCenterX = elementCenterX (for buttons) OR safeAreaCenterX (for standalone text)
-   - Verify: (textCenterX - estimatedWidth/2) >= ${containerX + contentPadding} AND (textCenterX + estimatedWidth/2) <= ${containerX + containerWidth - contentPadding}
-   - All text y positions must stay between ${contentAreaY + 20} and ${containerY + containerHeight - 100}`
+   🚨 **TEXT POSITIONING RULES:**
+   - For text in buttons/cards: Use centering formula (textX = elementX + elementWidth/2)
+   - For standalone text: Center it horizontally (x ≈ ${contentAreaX + Math.floor(contentAreaWidth / 2)})
+   - All text must stay between y:${contentAreaY + 20} and y:${containerY + containerHeight - 100}`
             : '- Multi-column layouts allowed\n   - Grid-based alignment\n   - Spacious sections with clear separation\n   - Traditional navigation patterns\n   - NO bottom tab bar required'}
 
 🚨 **CRITICAL OUTPUT REQUIREMENTS:**
@@ -554,6 +589,14 @@ Return the raw JSON object now:`;
             throw new Error('Invalid design specification: missing shapes array');
         }
 
+        // Process any image shapes to generate actual images
+        const imageShapes = designSpec.shapes.filter(s => s.type === 'image' && s.imagePrompt);
+        if (imageShapes.length > 0) {
+            console.log(`[ComplexDesign] Processing ${imageShapes.length} image shape(s)...`);
+            designSpec.shapes = await processImageShapes(designSpec.shapes);
+            console.log('[ComplexDesign] Image processing complete');
+        }
+
         // Ensure metadata is present
         if (!designSpec.metadata) {
             designSpec.metadata = {
@@ -603,14 +646,36 @@ export async function generateDesignVariation(
 
 Your task is to generate a modified version of the design that incorporates the requested changes while maintaining visual coherence and professional quality.
 
-Return ONLY a valid JSON object with the same structure as the original design.`;
+CRITICAL: Return ONLY a valid JSON object with this EXACT structure:
+{
+    "shapes": [array of shape objects],
+    "description": "string describing the variation",
+    "metadata": {
+        "shapeCount": number,
+        "estimatedComplexity": "simple" | "moderate" | "complex",
+        "designStyle": "string describing the style"
+    }
+}
 
-    const userPrompt = `Original Design:
+RESPONSE FORMAT RULES:
+1. Return ONLY the raw JSON object - NO markdown, NO code blocks, NO explanations
+2. Start with { and end with }
+3. NO trailing commas before closing braces or brackets
+4. NO comments (no // or /* */)
+5. ALL string values must use double quotes, not single quotes
+6. The "shapes" array MUST contain at least one shape
+7. All three top-level fields (shapes, description, metadata) are REQUIRED
+
+Do not include any markdown formatting, code blocks, or explanatory text - ONLY the raw JSON object.`;
+
+    const userPrompt = `Original Design (${originalShapes.length} shapes):
 ${JSON.stringify(originalShapes, null, 2)}
 
 Variation Request: ${variationRequest}
 
-Create a variation of this design that incorporates the requested changes. Maintain the overall structure but apply the modifications thoughtfully. Return ONLY valid JSON.`;
+Create a variation of this design that incorporates the requested changes. Maintain the overall structure but apply the modifications thoughtfully.
+
+CRITICAL: Your response must be a complete JSON object with shapes, description, and metadata fields. Return ONLY the raw JSON object, no other text.`;
 
     try {
         const response = await model.invoke([

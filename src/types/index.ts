@@ -44,7 +44,8 @@ export type CanvasObjectType =
     | 'text'
     | 'line'
     | 'polygon'
-    | 'image';
+    | 'image'
+    | 'icon';
 
 export interface CanvasObject {
     id: string;
@@ -68,6 +69,9 @@ export interface CanvasObject {
     fontFamily: string;
     fontWeight: string;
     textAlign: string;
+    imageUrl?: string;
+    iconName?: string;
+    keepAspectRatio?: boolean;
     zIndex: number;
     lockedAt?: Date;
     lockedBy?: string;
@@ -230,6 +234,9 @@ export interface CreateShapeRequest {
     fontFamily?: string;
     fontWeight?: string;
     textAlign?: string;
+    imageUrl?: string;
+    iconName?: string;
+    keepAspectRatio?: boolean;
     zIndex?: number;
 }
 
@@ -252,6 +259,9 @@ export interface UpdateShapeRequest {
     fontFamily?: string;
     fontWeight?: string;
     textAlign?: string;
+    imageUrl?: string;
+    iconName?: string;
+    keepAspectRatio?: boolean;
     zIndex?: number;
     lockedAt?: Date | null;
     lockedBy?: string | null;
