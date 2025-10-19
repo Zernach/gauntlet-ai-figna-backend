@@ -350,13 +350,40 @@ DESIGN PRINCIPLES FOR BEAUTY:
    - Generous padding inside containers
 7. **Typography Scale**: Use clear size differences (1.5x-2x between levels)
 8. **TEXT CENTERING**: Always use the centering formula from "SHAPE TYPES & POSITIONING" section above
-9. **USE IMAGES LIBERALLY**: 
-   - Hero sections should have compelling hero images
-   - Product/app designs should show product photos or screenshots
-   - Landing pages need engaging visual content
-   - Dashboard designs benefit from chart/graph visualizations
-   - Use imagePrompt to describe exactly what you want - the system generates it automatically
-   - Examples: "modern office workspace", "smartphone displaying app interface", "financial charts and graphs", "team collaboration in modern office"
+9. **🖼️ USE IMAGES AGGRESSIVELY AND PROACTIVELY (CRITICAL - HIGHEST PRIORITY):**
+   - **DEFAULT TO IMAGES**: When designing ANY interface, your FIRST instinct should be to include compelling, contextually relevant images
+   - **MINIMUM IMAGE USAGE**: Include AT LEAST 3+ images in every design, even simple ones
+   - **DON'T WAIT TO BE ASKED**: Generate images proactively based on the design context, even if the user doesn't explicitly request them
+   - **IMAGE-FIRST DESIGN PHILOSOPHY**: Modern professional designs are image-heavy. Empty designs look unfinished.
+   
+   **MANDATORY Image Use Cases (Generate images for ALL of these):**
+   - ✅ Hero sections should include a hero image (full-width, 200-400px height)
+   - ✅ Product/E-commerce: should always show product photos or mockups
+   - ✅ Landing pages: Multiple images showing features, benefits, or lifestyle shots
+   - ✅ Dashboards: Charts, graphs, data visualizations rendered as images
+   - ✅ Profile sections: User avatars, profile photos, team member photos
+   - ✅ Content cards: Each card should have a relevant thumbnail or featured image
+   - ✅ App screens: Screenshots of the app interface or feature demonstrations
+   - ✅ Marketing pages: Lifestyle images, customer photos, testimonial images
+   - ✅ Restaurant/Food: Beautiful food photography, dish presentations, interior shots
+   - ✅ Real Estate: Property photos, interior shots, neighborhood views
+   - ✅ Fitness/Health: Workout images, healthy food, people exercising
+   - ✅ Travel: Destination photos, hotels, attractions, travel scenes
+   - ✅ Finance/Banking: Professional office scenes, people using financial apps, data visualizations
+   - ✅ Social Media: User-generated content, posts with images, photo feeds and user avatars
+   - ✅ Blog/News: Article featured images, thumbnails, author photos
+   - ✅ Education: Students learning, classroom scenes, educational materials
+   - ✅ Background imagery: Subtle background images or patterns to add depth
+   
+   **Image Sizing Strategy:**
+   - Hero images: Full content width × 200-400px height
+   - Card thumbnails: 80-120px squares or 150x100px rectangles
+   - Featured content: 300-600px wide × 200-400px tall
+   - Profile avatars: 60-100px circles or rounded squares
+   - Gallery items: 150x150px to 250x250px squares
+   
+   **Remember**: Professional designers use images extensively. A design with 3+ images looks complete and polished. ALWAYS err on the side of MORE images.
+   
 10. **🚨 CONTEXTUALLY RELEVANT TEXT CONTENT (CRITICAL):**
    - **NEVER use generic placeholder text** like "Lorem Ipsum", "Welcome", "Click Here", "Sample Text"
    - **ALL text content MUST be relevant** to the user's design request (industry, topic, use case)
@@ -412,18 +439,21 @@ Return ONLY a valid JSON object with this exact structure:
 {
     "shapes": [
         { "type": "rectangle", "x": ${containerX}, "y": ${containerY}, "width": ${containerWidth}, "height": ${containerHeight}, "color": "#0A0A0A", "borderRadius": ${deviceLayout === 'mobile' ? 32 : 8}, "zIndex": 1 },
-        { "type": "image", "x": ${contentAreaX}, "y": ${contentAreaY + 20}, "width": ${Math.floor(contentAreaWidth)}, "height": 200, "imagePrompt": "professional modern tech workspace with laptop and coffee, clean minimalist desk", "borderRadius": 16, "zIndex": 3 },
-        { "type": "text", "x": ${contentAreaX + Math.floor(contentAreaWidth / 2)}, "y": ${contentAreaY + 250}, "textContent": "[Use contextually relevant text based on design request - e.g., 'Track Your Fitness Goals' for fitness app]", "fontSize": ${deviceLayout === 'mobile' ? 28 : 36}, "fontWeight": "bold", "color": "#FFFFFF", "zIndex": 10 },
-        { "type": "rectangle", "x": ${contentAreaX}, "y": ${contentAreaY + 300}, "width": 200, "height": 48, "color": "#4A90E2", "borderRadius": 12, "zIndex": 11 },
-        { "type": "text", "x": ${contentAreaX + 100}, "y": ${contentAreaY + 324}, "textContent": "[Contextual CTA - e.g., 'Start Training' for fitness app]", "fontSize": 16, "fontWeight": "600", "color": "#FFFFFF", "zIndex": 12 }
+        { "type": "image", "x": ${contentAreaX}, "y": ${contentAreaY + 20}, "width": ${Math.floor(contentAreaWidth)}, "height": 240, "imagePrompt": "professional high-quality photo of a modern tech workspace with laptop and coffee, clean minimalist desk, natural lighting, shallow depth of field", "borderRadius": 16, "zIndex": 3 },
+        { "type": "text", "x": ${contentAreaX + Math.floor(contentAreaWidth / 2)}, "y": ${contentAreaY + 290}, "textContent": "[Use contextually relevant text based on design request - e.g., 'Track Your Fitness Goals' for fitness app]", "fontSize": ${deviceLayout === 'mobile' ? 28 : 36}, "fontWeight": "bold", "color": "#FFFFFF", "zIndex": 10 },
+        { "type": "image", "x": ${contentAreaX}, "y": ${contentAreaY + 330}, "width": 80, "height": 80, "imagePrompt": "professional user profile photo, friendly person smiling, studio lighting, professional headshot", "borderRadius": 40, "zIndex": 4 },
+        { "type": "rectangle", "x": ${contentAreaX}, "y": ${contentAreaY + 440}, "width": 200, "height": 48, "color": "#4A90E2", "borderRadius": 12, "zIndex": 11 },
+        { "type": "text", "x": ${contentAreaX + 100}, "y": ${contentAreaY + 464}, "textContent": "[Contextual CTA - e.g., 'Start Training' for fitness app]", "fontSize": 16, "fontWeight": "600", "color": "#FFFFFF", "zIndex": 12 }
     ],
-    "description": "A beautiful, contained ${deviceLayout} design with hero image, centered text, and call-to-action button",
+    "description": "A beautiful, image-rich ${deviceLayout} design with hero image, profile photo, centered text, and call-to-action button",
     "metadata": {
-        "shapeCount": 5,
+        "shapeCount": 6,
         "estimatedComplexity": "simple",
         "designStyle": "${style} ${colorScheme}"
     }
 }
+
+NOTE: This example includes 2 images (hero + profile photo). Your designs should typically include 3+ images depending on complexity and context.
 
 NOTE: Replace bracketed placeholder text with actual contextually relevant text based on the user's design request (see rule #10 above).
 
@@ -467,6 +497,7 @@ Generate a BEAUTIFUL, professional ${deviceLayout === 'mobile' ? 'mobile-first' 
    - Perfect alignment and consistent spacing (multiples of 8px)
    - **ALL TEXT MUST BE CENTERED**: Use formula textX = elementX + (elementWidth / 2), textY = elementY + (elementHeight / 2)
    - **🚨 USE CONTEXTUALLY RELEVANT TEXT**: All text content (headings, buttons, labels) MUST relate to the design request's topic/industry. NO generic placeholders like "Welcome" or "Lorem Ipsum"!
+   - **🖼️ MANDATORY: INCLUDE 2+ IMAGES in every design**: Every professional design needs rich visual content. Add hero images, thumbnails, profile photos, product shots, or illustrations relevant to the context. Use detailed imagePrompt values.
    
 4. **${deviceLayout.toUpperCase()} BEST PRACTICES:**
    ${deviceLayout === 'mobile'
