@@ -1,4 +1,4 @@
-import { Router, Response } from 'express';
+import { Router, Response, Request } from 'express';
 import { enhancedAuthenticateUser, AuthRequest } from '../middleware/enhancedAuth';
 import { getAPIKey, hasAPIKey } from '../config/apiKeys';
 import { securityLogger, SecurityEventType } from '../utils/securityLogger';
@@ -510,7 +510,7 @@ router.post('/generate-images', enhancedAuthenticateUser, async (req: AuthReques
 });
 
 // GET /api/voice/proxy-image - Proxy DALL-E images to avoid CORS issues
-router.get('/proxy-image', async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/proxy-image', async (req: Request, res: Response): Promise<void> => {
     try {
         const imageUrl = req.query.url as string;
 
@@ -535,6 +535,22 @@ router.get('/proxy-image', async (req: AuthRequest, res: Response): Promise<void
         const imageResponse = await fetch(imageUrl);
 
         if (!imageResponse.ok) {
+            // If the image is not accessible (expired or other error), return a placeholder
+            if (imageResponse.status === 403 || imageResponse.status === 404) {
+                console.log('DALL-E image expired or not accessible:', imageUrl);
+
+                // Return a placeholder image (1x1 transparent PNG)
+                const placeholderImage = Buffer.from(
+                    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+                    'base64'
+                );
+
+                res.setHeader('Content-Type', 'image/png');
+                res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+                res.send(placeholderImage);
+                return;
+            }
+
             res.status(imageResponse.status).json({
                 error: 'Failed to fetch image',
                 message: 'Could not retrieve image from DALL-E',
